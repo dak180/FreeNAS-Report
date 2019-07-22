@@ -1,13 +1,15 @@
-# ZPool & SMART status report with FreeNAS config backup
-Original script by joeschmuck, modified by Bidelu0hm, then by melp
+# SMART status report 
+Original script by joeschmuck, modified by Bidelu0hm, then by melp, then by hdijkema
 
-Preview of the output here: http://i.imgur.com/t9Mtqyt.png
+**At a minimum, you will need to enter your email address, DRIVES and TYPES (for USB bus types for smartctl)  in user-definable parameter section.** Feel free to edit other user parameters as needed.
 
-**At a minimum, you will need to enter your email address in user-definable parameter section.** Feel free to edit other user parameters as needed.
-
-**Version: v1.3**
+**Version: v1.31**
 
 **Changelog:**
+
+*v1.31:*
+- Created real HTML, because roundcube wouldn't understand text/html without the right HTML syntax
+- removed all ZPool entries and turned off FreeNas Config backup
 
 *v1.3:*
 - Added scrub duration column
