@@ -8,12 +8,17 @@
 email="root@dykema.nl"
 DRIVES=`ls /dev/sd? | sed -e 's%/dev/%%' | sort -r`
 TYPES=""
+FONTSIZE="8pt"
 
 ### Global table colors
-okColor="#c9ffcc"       # Hex code for color to use in SMART Status column if drives pass (default is light green, #c9ffcc)
-warnColor="#ffd6d6"     # Hex code for WARN color (default is light red, #ffd6d6)
-critColor="#ff0000"     # Hex code for CRITICAL color (default is bright red, #ff0000)
-altColor="#f4f4f4"      # Table background alternates row colors between white and this color (default is light gray, #f4f4f4)
+okColor="_ok"       # Hex code for color to use in SMART Status column if drives pass (default is light green, #c9ffcc)
+warnColor="_warn"     # Hex code for WARN color (default is light red, #ffd6d6)
+critColor="_crit"     # Hex code for CRITICAL color (default is bright red, #ff0000)
+altColor="_alt"      # Table background alternates row colors between white and this color (default is light gray, #f4f4f4)
+
+### programs
+SMARTCTL=/usr/sbin/smartctl
+SENDMAIL=/usr/sbin/sendmail
 
 ### zpool status summary table settings
 usedWarn=90             # Pool used percentage for CRITICAL color to be used
@@ -21,8 +26,8 @@ scrubAgeWarn=30         # Maximum age (in days) of last pool scrub before CRITIC
 
 ### SMART status summary table settings
 includeSSD="false"      # [NOTE: Currently this is pretty much useless] Change to "true" to include SSDs in SMART status summary table; "false" to disable
-tempWarn=40             # Drive temp (in C) at which WARNING color will be used
-tempCrit=45             # Drive temp (in C) at which CRITICAL color will be used
+tempWarn=45             # Drive temp (in C) at which WARNING color will be used
+tempCrit=53             # Drive temp (in C) at which CRITICAL color will be used
 sectorsCrit=10          # Number of sectors per drive with errors before CRITICAL color will be used
 testAgeWarn=5           # Maximum age (in days) of last SMART test before CRITICAL color will be used
 powerTimeFormat="ymdh"  # Format for power-on hours string, valid options are "ymdh", "ymd", "ym", or "y" (year month day hour)
@@ -37,7 +42,20 @@ backupLocation="/path/to/config/backup"   # Directory in which to save FreeNAS c
 host=$(hostname -s)
 HOST=$host
 logfile="/tmp/smart_report.tmp"
-subject="Status Report and Configuration Backup for ${host}"
+subject="S.M.A.R.T. Status van ${host}"
+
+OK_COLOR="#c9ffcc"       # Hex code for color to use in SMART Status column if drives pass (default is light green, #c9ffcc)
+WARN_COLOR="#ffd6d6"     # Hex code for WARN color (default is light red, #ffd6d6)
+CRIT_COLOR="#ff0000"     # Hex code for CRITICAL color (default is bright red, #ff0000)
+ALT_COLOR="#f4f4f4"      # Table background alternates row colors between white and this color (default is light gray, #f4f4f4)
+
+CONFIG=`dirname $0`/smartreport.cfg
+
+
+. $CONFIG
+
+CSS="<style>td.tdcenter, td.tdcenter_alt { text-align:center; border: 1px solid black; border-collapse:collapse; font-family:courier; font-size: $FONTSIZE; } td.tdcenter_ok { background-color: $OK_COLOR; text-align:center; border: 1px solid black; border-collapse:collapse; font-family:courier; font-size: $FONTSIZE; } td.tdcenter_warn { background-color: $WARN_COLOR;text-align:center; border: 1px solid black; border-collapse:collapse; font-family:courier; font-size: $FONTSIZE; } td.tdcenter_crit { background-color: $CRIT_COLOR;text-align:center; border: 1px solid black; border-collapse:collapse; font-family:courier; font-size: $FONTSIZE; }</style>"
+
 boundary="gc0p4Jq0M2Yt08jU534c0p"
 if [ "$includeSSD" == "true" ]; then
     drives=$(for drive in $DRIVES; do
@@ -49,7 +67,7 @@ if [ "$includeSSD" == "true" ]; then
               D="-d $type"
            fi
         done
-        if [ "$(smartctl $D -i /dev/"${drive}" | grep "SMART support is: Enabled")" ]; then
+        if [ "$($SMARTCTL $D -i /dev/"${drive}" | grep "SMART support is: Enabled")" ]; then
             printf "%s " "${drive}"
         fi
     done | awk '{for (i=NF; i!=0 ; i--) print $i }')
@@ -63,7 +81,7 @@ else
               D="-d $type"
            fi
         done
-        if [ "$(smartctl $D -i /dev/"${drive}" | grep "SMART support is: Enabled")" ] && ! [ "$(smartctl $D -i /dev/"${drive}" | grep "Solid State Device")" ]; then
+        if [ "$($SMARTCTL $D -i /dev/"${drive}" | grep "SMART support is: Enabled")" ] && ! [ "$($SMARTCTL $D -i /dev/"${drive}" | grep "Solid State Device")" ]; then
             printf "%s " "${drive}"
         fi
     done | awk '{for (i=NF; i!=0 ; i--) print $i }')
@@ -96,7 +114,7 @@ if [ "$configBackup" == "true" ]; then
             echo "Content-Type: text/html; charset=\"utf-8\""
             echo ""
             echo "<!DOCTYPE html>"
-            echo "<html><head><title>Report for $HOST</title></head><body>"
+            echo "<html><head>$CSS<title>Report for $HOST</title></head><body style=\"font-size:$FONTSIZE;\">"
             echo "<b>Automatic backup of $HOST configuration has failed! The configuration file is corrupted!</b>"
             echo "<b>You should correct this problem as soon as possible!</b>"
             echo "<br>"
@@ -122,7 +140,7 @@ if [ "$configBackup" == "true" ]; then
             echo "Content-Type: text/html; charset=\"utf-8\""
             echo ""
             echo "<!DOCTYPE html>"
-            echo "<html><head><title>Report for $HOST</title></head><body>"
+            echo "<html><head>$CSS<title>Report for $HOST</title></head><body style=\"font-size:$FONTSIZE;\">"
         ) >> "$logfile"
         # If logfile saving is enabled, copy .tar.gz file to specified location before it (and everything else) is removed below
         if [ "$saveBackup" == "true" ]; then
@@ -140,10 +158,9 @@ else
         echo "Content-Type: text/html; charset=\"utf-8\""
         echo ""
         echo "<!DOCTYPE html>"
-        echo "<html><head><title>Report for $HOST</title></head><body>"
+        echo "<html><head>$CSS<title>Report for $HOST</title></head><body style=\"font-size:$FONTSIZE;\">"
     ) >> "$logfile"
 fi
-
 
 ###### Report Summary Section (html tables)
 ### SMART status summary table
@@ -151,30 +168,30 @@ fi
     # Write HTML table headers to log file
     echo "<br><br>"
     echo "<table style=\"border: 1px solid black; border-collapse: collapse;\">"
-    echo "<tr><th colspan=\"15\" style=\"text-align:center; font-size:20px; height:40px; font-family:courier;\">SMART Status Report Summary</th></tr>"
+    echo "<tr><th colspan=\"15\" style=\"text-align:center;font-family:courier;font-size:$FONTSIZE;\">SMART Status Report Summary</th></tr>"
     echo "<tr>"
-    echo "  <th style=\"text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Device</th>"
-    echo "  <th style=\"text-align:center; width:130px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Serial<br>Number</th>"
-    echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">SMART<br>Status</th>"
-    echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Temp</th>"
-    echo "  <th style=\"text-align:center; width:120px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Power-On<br>Time</th>"
-    echo "  <th style=\"text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Start/Stop<br>Count</th>"
-    echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Spin<br>Retry<br>Count</th>"
-    echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Realloc'd<br>Sectors</th>"
-    echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Realloc<br>Events</th>"
-    echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Current<br>Pending<br>Sectors</th>"
-    echo "  <th style=\"text-align:center; width:120px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Offline<br>Uncorrectable<br>Sectors</th>"
-    echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">UltraDMA<br>CRC<br>Errors</th>"
-    echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Seek<br>Error<br>Health</th>"
-    echo "  <th style=\"text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Last Test<br>Age (days)</th>"
-    echo "  <th style=\"text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Last Test<br>Type</th></tr>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Device</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Serial<br>Number</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">SMART<br>Status</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Temp</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Power-On<br>Time</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Start/Stop<br>Count</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Spin<br>Retry<br>Count</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Realloc'd<br>Sectors</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Realloc<br>Events</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Current<br>Pending<br>Sectors</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Offline<br>Uncorrectable<br>Sectors</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">UltraDMA<br>CRC<br>Errors</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Seek<br>Error<br>Health</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Last Test<br>Age (days)</th>"
+    echo "  <th style=\"text-align:center; border:1px solid black; border-collapse:collapse; font-family:courier;font-size:$FONTSIZE;\">Last Test<br>Type</th></tr>"
     echo "</tr>"
 ) >> "$logfile"
 for drive in $drives; do
     (
-        # For each drive detected, run "smartctl -A -i" and parse its output. This whole section is a single, long statement, so I'll make all comments here.
-        # Start by passing awk variables (all the -v's) used in other parts of the script. Other variables are calculated in-line with other smartctl calls.
-        # Next, pull values out of the original "smartctl -A -i" statement by searching for the text between the //'s.
+        # For each drive detected, run "$SMARTCTL -A -i" and parse its output. This whole section is a single, long statement, so I'll make all comments here.
+        # Start by passing awk variables (all the -v's) used in other parts of the script. Other variables are calculated in-line with other $SMARTCTL calls.
+        # Next, pull values out of the original "$SMARTCTL -A -i" statement by searching for the text between the //'s.
         # After parsing the output, compute other values (last test's age, on time in YY-MM-DD-HH).
         # After these computations, determine the row's background color (alternating as above, subbing in other colors from the palate as needed).
         # Finally, print the HTML code for the current row of the table with all the gathered data.
@@ -186,12 +203,12 @@ for drive in $drives; do
               D="-d $type"
            fi
         done
-        smartctl $D -A -i /dev/"$drive" | \
+        $SMARTCTL $D -A -i /dev/"$drive" | \
         awk -v device="$drive" -v tempWarn="$tempWarn" -v tempCrit="$tempCrit" -v sectorsCrit="$sectorsCrit" -v testAgeWarn="$testAgeWarn" \
         -v okColor="$okColor" -v warnColor="$warnColor" -v critColor="$critColor" -v altColor="$altColor" -v powerTimeFormat="$powerTimeFormat" \
-        -v lastTestHours="$(smartctl $D -l selftest /dev/"$drive" | grep "# 1" | awk '{print $9}')" \
-        -v lastTestType="$(smartctl $D -l selftest /dev/"$drive" | grep "# 1" | awk '{print $3}')" \
-        -v smartStatus="$(smartctl $D -H /dev/"$drive" | grep "SMART overall-health" | awk '{print $6}')" ' \
+        -v lastTestHours="$($SMARTCTL $D -l selftest /dev/"$drive" | grep "# 1" | awk '{print $9}')" \
+        -v lastTestType="$($SMARTCTL $D -l selftest /dev/"$drive" | grep "# 1" | awk '{print $3}')" \
+        -v smartStatus="$($SMARTCTL $D -H /dev/"$drive" | grep "SMART overall-health" | awk '{print $6}')" ' \
         /Serial Number:/{serial=$3} \
         /Temperature_Celsius/{temp=($10 + 0)} \
         /Power_On_Hours/{onHours=$10} \
@@ -226,21 +243,21 @@ for drive in $drives; do
             if ((seekErrorHealth + 0) < 100) seekErrorHealthColor = warnColor; else seekErrorHealthColor = bgColor;
             if (testAge > testAgeWarn) testAgeColor = warnColor; else testAgeColor = bgColor;
             printf "<tr style=\"background-color:%s;\">\n" \
-                "<td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">/dev/%s</td>\n" \
-                "<td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
-                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
-                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%d*C</td>\n" \
-                "<td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
-                "<td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
-                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
-                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
-                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
-                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
-                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
-                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
-                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s%%</td>\n" \
-                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%d</td>\n" \
-                "<td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
+                "<td class=\"tdcenter\">/dev/%s</td>\n" \
+                "<td class=\"tdcenter\">%s</td>\n" \
+                "<td class=\"tdcenter%s\">%s</td>\n" \
+                "<td class=\"tdcenter%s\">%d*C</td>\n" \
+                "<td class=\"tdcenter\">%s</td>\n" \
+                "<td class=\"tdcenter\">%s</td>\n" \
+                "<td class=\"tdcenter%s\">%s</td>\n" \
+                "<td class=\"tdcenter%s\">%s</td>\n" \
+                "<td class=\"tdcenter%s\">%s</td>\n" \
+                "<td class=\"tdcenter%s\">%s</td>\n" \
+                "<td class=\"tdcenter%s\">%s</td>\n" \
+                "<td class=\"tdcenter%s\">%s</td>\n" \
+                "<td class=\"tdcenter%s\">%s%%</td>\n" \
+                "<td class=\"tdcenter%s\">%d</td>\n" \
+                "<td class=\"tdcenter\">%s</td>\n" \
             "</tr>\n", bgColor, device, serial, smartStatusColor, smartStatus, tempColor, temp, onTime, startStop, spinRetryColor, spinRetry, reAllocColor, reAlloc, \
             reAllocEventColor, reAllocEvent, pendingColor, pending, offlineUncColor, offlineUnc, crcErrorsColor, crcErrors, seekErrorHealthColor, seekErrorHealth, \
             testAgeColor, testAge, lastTestType;
@@ -255,7 +272,7 @@ done
 
 
 ###### Detailed Report Section (monospace text)
-echo "<pre style=\"font-size:14px\">" >> "$logfile"
+echo "<pre style=\"font-size:8pt\">" >> "$logfile"
 
 ### zpool status for each pool
 for pool in $pools; do
@@ -279,20 +296,20 @@ for drive in $drives; do
            fi
         done
     # Gather brand and serial number of each drive
-    brand="$(smartctl $D -i /dev/"$drive" | grep "Model Family" | awk '{print $3, $4, $5}')"
-    serial="$(smartctl $D -i /dev/"$drive" | grep "Serial Number" | awk '{print $3}')"
+    brand="$($SMARTCTL $D -i /dev/"$drive" | grep "Model Family" | awk '{print $3, $4, $5}')"
+    serial="$($SMARTCTL $D -i /dev/"$drive" | grep "Serial Number" | awk '{print $3}')"
     (
-        # Create a simple header and drop the output of some basic smartctl commands
+        # Create a simple header and drop the output of some basic $SMARTCTL commands
         echo "<br>"
         echo "<b>########## SMART status report for ${drive} drive (${brand}: ${serial}) ##########</b>"
-        smartctl $D -H -A -l error /dev/"$drive"
-        smartctl $D -l selftest /dev/"$drive" | grep "Extended \\|Num" | cut -c6- | head -2
-        smartctl $D -l selftest /dev/"$drive" | grep "Short \\|Num" | cut -c6- | head -2 | tail -n -1
+        $SMARTCTL $D -H -A -l error /dev/"$drive"
+        $SMARTCTL $D -l selftest /dev/"$drive" | grep "Extended \\|Num" | cut -c6- | head -2
+        $SMARTCTL $D -l selftest /dev/"$drive" | grep "Short \\|Num" | cut -c6- | head -2 | tail -n -1
         echo "<br><br>"
     ) >> "$logfile"
 done
 # Remove some un-needed junk from the output
-sed -i -e '/smartctl 6.3/d' "$logfile"
+sed -i -e '/$SMARTCTL 6.3/d' "$logfile"
 sed -i -e '/Copyright/d' "$logfile"
 sed -i -e '/=== START OF READ/d' "$logfile"
 sed -i -e '/SMART Attributes Data/d' "$logfile"
@@ -308,5 +325,5 @@ sed -i -e '/SMART Error Log Version/d' "$logfile"
 )  >> "$logfile"
 
 ### Send report
-sendmail -t -oi < "$logfile"
+$SENDMAIL -t -oi < "$logfile"
 rm "$logfile"
