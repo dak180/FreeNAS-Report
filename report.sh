@@ -382,7 +382,7 @@ for drive in $drives; do
         smartctl -A -i /dev/"$drive" | \
         awk -v device="$drive" -v tempWarn="$tempWarn" -v tempCrit="$tempCrit" -v sectorsCrit="$sectorsCrit" -v testAgeWarn="$testAgeWarn" \
         -v okColor="$okColor" -v warnColor="$warnColor" -v critColor="$critColor" -v altColor="$altColor" -v powerTimeFormat="$powerTimeFormat" \
-        -v lastTestHours="$(smartctl -l selftest /dev/"$drive" | grep "# 1" | awk '{print $9}')" \
+        -v lastTestHours="$(smartctl -l selftest /dev/"$drive" | grep "# 1" | cut -b 59-68 | awk '{print $1}')" \
         -v lastTestType="$(smartctl -l selftest /dev/"$drive" | grep "# 1" | awk '{print $3}')" \
         -v smartStatus="$(smartctl -H /dev/"$drive" | grep "SMART overall-health" | awk '{print $6}')" ' \
         /Device Model:/{$1=$2=""; model=$0} \
