@@ -273,15 +273,15 @@ for pool in $pools; do
 
     # if status is resilvered
     elif [ "$(echo "$statusOutput" | grep "scan:" | awk '{print $2}')" = "resilvered" ]; then
-            resilver="<BR>Resilvered"
-            scrubRepBytes="$(echo "$statusOutput" | grep "scan:" | awk '{print $3}')"
-            scrubErrors="$(echo "$statusOutput" | grep "scan:" | awk '{print $9}')"
-            # Convert time/datestamp format presented by zpool status, compare to current date, calculate scrub age
-            scrubDate="$(echo "$statusOutput" | grep "scan:" | awk '{print $16"-"$13"-"$14"_"$15}')"
-            scrubTS="$(date -j -f "%Y-%b-%e_%H:%M:%S" "$scrubDate" "+%s")"
-            currentTS="$(date "+%s")"
-            scrubAge=$((((currentTS - scrubTS) + 43200) / 86400))
-            scrubTime="$(echo "$statusOutput" | grep "scan:" | awk '{print $7}')"
+        resilver="<BR>Resilvered"
+        scrubRepBytes="$(echo "$statusOutput" | grep "scan:" | awk '{print $3}')"
+        scrubErrors="$(echo "$statusOutput" | grep "scan:" | awk '{print $9}')"
+        # Convert time/datestamp format presented by zpool status, compare to current date, calculate scrub age
+        scrubDate="$(echo "$statusOutput" | grep "scan:" | awk '{print $14"-"$13"-"$16" "$15}')"
+        scrubTS="$(date -d "$scrubDate" "+%s")"
+        currentTS="$(date "+%s")"
+        scrubAge=$((((currentTS - scrubTS) + 43200) / 86400))
+        scrubTime="$(echo "$statusOutput" | grep "scan:" | awk '{print $7}')"
 
     # Check if resilver is in progress
     elif [ "$(echo "$statusOutput"| grep "scan:" | awk '{print $2}')" = "resilver" ]; then
