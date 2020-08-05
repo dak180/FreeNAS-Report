@@ -6,8 +6,10 @@
 ### At a minimum, enter email address in user-definable parameter section. Feel free to edit other user parameters as needed.
 ### If you find any errors, feel free to contact me on the FreeNAS forums (username melp) or email me at jason at jro dot io.
 
-### Version: v1.6
+### Version: v1.6.1
 ### Changelog:
+# v1.6.1
+#   - Properly extract scrub times > 1 day
 # v1.6
 #   - Linux port (ZoL 0.8.4)
 #   - HTML boundary fix, proper message ids, support for dma mailer
@@ -269,7 +271,7 @@ for pool in $pools; do
         scrubTS="$(date -d "$scrubDate" "+%s")"
         currentTS="$(date "+%s")"
         scrubAge=$((((currentTS - scrubTS) + 43200) / 86400))
-        scrubTime="$(echo "$statusOutput" | grep "scan:" | awk '{print $8}')"
+        scrubTime="$(echo "$statusOutput" | grep "scan:" | sed -e 's/.* in \(.*\) with .*/\1/')"
 
     # if status is resilvered
     elif [ "$(echo "$statusOutput" | grep "scan:" | awk '{print $2}')" = "resilvered" ]; then
