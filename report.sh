@@ -1,6 +1,6 @@
 #!/bin/bash
 
-###### ZPool & SMART status report with FreeNAS config backup
+###### ZPool & SMART status report with TrueNAS config backup
 ### Original script by joeschmuck, modified by Bidelu0hm, then by melp (me)
 
 ### At a minimum, enter email address in user-definable parameter section. Feel free to edit other user parameters as needed.
@@ -54,21 +54,21 @@ usedWarn=90             # Pool used percentage for CRITICAL color to be used
 scrubAgeWarn=30         # Maximum age (in days) of last pool scrub before CRITICAL color will be used
 
 ### SMART status summary table settings
-includeSSD="false"      # [NOTE: Currently this is pretty much useless] Change to "true" to include SSDs in SMART status summary table; "false" to disable
+includeSSD="true"      # [NOTE: Currently this is pretty much useless] Change to "true" to include SSDs in SMART status summary table; "false" to disable
 tempWarn=40             # Drive temp (in C) at which WARNING color will be used
 tempCrit=45             # Drive temp (in C) at which CRITICAL color will be used
 sectorsCrit=10          # Number of sectors per drive with errors before CRITICAL color will be used
 testAgeWarn=5           # Maximum age (in days) of last SMART test before CRITICAL color will be used
 powerTimeFormat="ymdh"  # Format for power-on hours string, valid options are "ymdh", "ymd", "ym", or "y" (year month day hour)
 
-### FreeNAS config backup settings
+### TrueNAS config backup settings
 configBackup="true"     # Change to "false" to skip config backup (which renders next two options meaningless); "true" to keep config backups enabled
-saveBackup="true"       # Change to "false" to delete FreeNAS config backup after mail is sent; "true" to keep it in dir below
-backupLocation="/path/to/config/backup"   # Directory in which to save FreeNAS config backups
+saveBackup="false"       # Change to "false" to delete TrueNAS config backup after mail is sent; "true" to keep it in dir below
+backupLocation="/path/to/config/backup"   # Directory in which to save TrueNAS config backups
 
 
 ###### Auto-generated Parameters
-host=$(hostname -s)
+host=$(hostname -s | tr '[:lower:]' '[:upper:]')
 logfile="/tmp/smart_report.tmp"
 subject="Status Report and Configuration Backup for ${host}"
 boundary="gc0p4Jq0M2Yt08jU534c0p"
@@ -103,14 +103,14 @@ pools=$(zpool list -H -o name)
 if [ "$configBackup" == "true" ]; then
     # Set up file names, etc for later
     tarfile="/tmp/config_backup.tar.gz"
-    filename="$(date "+FreeNAS_Config_%Y-%m-%d")"
+    filename="$(date "+TrueNAS_Config_%Y-%m-%d")"
     ### Test config integrity
     if ! [ "$(sqlite3 /data/freenas-v1.db "pragma integrity_check;")" == "ok" ]; then
         # Config integrity check failed, set MIME content type to html and print warning
         (
             echo "--${boundary}"
             echo "Content-Type: text/html"
-            echo "<b>Automatic backup of FreeNAS configuration has failed! The configuration file is corrupted!</b>"
+            echo "<b>Automatic backup of TrueNAS configuration has failed! The configuration file is corrupted!</b>"
             echo "<b>You should correct this problem as soon as possible!</b>"
             echo "<br>"
         ) >> "$logfile"
