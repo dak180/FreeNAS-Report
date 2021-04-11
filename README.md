@@ -10,15 +10,23 @@ After the resilver is done: https://i.imgur.com/I43MLLf.png
 
 When a scrub is in progess: https://i.imgur.com/YGmvZT4.png
   
+** At a minimum, you will need to enter your make a settings.conf file by copying the settings.conf.defaults file and
+** edit the email variable to your email. 
+** Feel free to edit other user parameters as needed.
+** NOTE: Backup has been disabled by default so if required please set to true.**
 
-**At a minimum, you will need to enter your email address in user-definable parameter section.** Feel free to edit other user parameters as needed.
-**NOTE: Backup has been disabled by default so if required please set to true.**
-
-**Version: v1.5**
+**Version: v1.6**
 
 **Changelog:**
+*v1.6:* (suppaduppax)
+ - Changed Allocated value from  being taken frol zpool to zfs for a more accurate
+      reading. (zpool list includes parity showing more capacity than whats available)
+ - Removed Size as it was not an accurate reading (see above)
+ - Fixed date formatting bug.
+ - Changed all references of FreeNAS to TrueNAS
+ - Added a settings.conf.default file. Copy and change values with a local settings.conf
 
-*v1.5* (ninpucho)
+*v1.5:* (ninpucho)
  - Added Frag%, Size, Allocated, Free for ZPool status report summary.
  - Added Disk Size, RPM, Model to the Smart Report
  - Added if statment so that if "Model Family" is not present script will use "Device Model" 

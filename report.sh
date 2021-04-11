@@ -8,7 +8,7 @@
 
 ### Version: v1.6
 ### Changelog:
-# v1.6 (suppaduppax):
+# v1.6:
 #   - Changed Allocated value from  being taken frol zpool to zfs for a more accurate
 #        reading. (zpool list includes parity showing more capacity than whats available)
 #   - Removed Size as it was not an accurate reading (see above)
