@@ -59,39 +59,29 @@
 # - Fix SSD SMART reporting
 # - Add support for conveyance test
 
+###### Read User-definable Parameters from settings.conf or settings.conf.defaults
+settingsFile="settings.conf"
+settingsFileDefault="settings.conf.defaults"
 
-###### User-definable Parameters
-### Email Address
-if [ ! -f "email-address" ]; then
-	echo "File not found: email-address"
-	exit 1
+# use default settings if settings.conf does not exist
+if [ ! -f "$settingsFile" ]; then
+    if [ ! -f "$settingsFileDefault" ]; then
+        # settings.conf.defaults doesn't exist either so throw an error
+        echo "Settings file not found. 'setings.conf' or 'settings.conf.defaults' must exist in the working directory."
+    fi
+    settingsFile="$settingsFileDefault"
 fi
 
-email="$(cat email-address)"
-
-### Global table colors
-okColor="#c9ffcc"       # Hex code for color to use in SMART Status column if drives pass (default is light green, #c9ffcc)
-warnColor="#ffd6d6"     # Hex code for WARN color (default is light red, #ffd6d6)
-critColor="#ff0000"     # Hex code for CRITICAL color (default is bright red, #ff0000)
-altColor="#f4f4f4"      # Table background alternates row colors between white and this color (default is light gray, #f4f4f4)
-
-### zpool status summary table settings
-usedWarn=90             # Pool used percentage for CRITICAL color to be used
-scrubAgeWarn=30         # Maximum age (in days) of last pool scrub before CRITICAL color will be used
-
-### SMART status summary table settings
-includeSSD="true"      # [NOTE: Currently this is pretty much useless] Change to "true" to include SSDs in SMART status summary table; "false" to disable
-tempWarn=40             # Drive temp (in C) at which WARNING color will be used
-tempCrit=45             # Drive temp (in C) at which CRITICAL color will be used
-sectorsCrit=10          # Number of sectors per drive with errors before CRITICAL color will be used
-testAgeWarn=5           # Maximum age (in days) of last SMART test before CRITICAL color will be used
-powerTimeFormat="ymdh"  # Format for power-on hours string, valid options are "ymdh", "ymd", "ym", or "y" (year month day hour)
-
-### TrueNAS config backup settings
-configBackup="true"     # Change to "false" to skip config backup (which renders next two options meaningless); "true" to keep config backups enabled
-saveBackup="true"       # Change to "false" to delete TrueNAS config backup after mail is sent; "true" to keep it in dir below
-backupLocation="/mnt/thebank/system/config-backups"   # Directory in which to save TrueNAS config backups
-
+# read user defined settings file
+while read LINE;
+do
+    if [[ "$LINE" =~ ^# || -z "$LINE" ]]; then
+        # skip empty lines and ignore spaces and anything that comes after a space
+        continue
+    fi
+    LINE="$(echo "$LINE" | awk '{print $1}')"
+    declare "$LINE";
+done < "$settingsFile"
 
 ###### Auto-generated Parameters
 host=$(hostname -s)
