@@ -1,6 +1,6 @@
 # ZPool & SMART status report with FreeNAS config backup
 Original Script By: joeschmuck
-Modified By: Bidelu0hm, melp, onlinepcwizard, Ninpucho
+Modified By: Bidelu0hm, melp, onlinepcwizard, Ninpucho, suppaduppax
 
 Preview of the output here: http://i.imgur.com/t9Mtqyt.png
 
