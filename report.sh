@@ -3,8 +3,9 @@
 ###### ZPool & SMART status report with TrueNAS config backup
 ### Original script by joeschmuck, modified by Bidelu0hm, melp, then by suppaduppax (me)
 
-### At a minimum, enter email address in user-definable parameter section. Feel free to edit other user parameters as needed.
-### If you find any errors, feel free to contact me on the TrueNAS forums (username melp) or email me at jason at jro dot io.
+# At a minimum, you will need to enter your make a settings.conf file by copying the settings.conf.defaults file and ** edit the email variable to your email. 
+# Feel free to edit other user parameters as needed.
+# NOTE: Backup has been disabled by default so if required please set to true.
 
 ### Version: v1.6
 ### Changelog:
