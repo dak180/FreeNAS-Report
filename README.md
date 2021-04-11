@@ -18,6 +18,7 @@ When a scrub is in progess: https://i.imgur.com/YGmvZT4.png
 **Version: v1.6**
 
 **Changelog:**
+
 *v1.6:* (suppaduppax)
  - Changed Allocated value from  being taken frol zpool to zfs for a more accurate
       reading. (zpool list includes parity showing more capacity than whats available)
