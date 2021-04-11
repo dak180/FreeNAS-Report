@@ -1,14 +1,21 @@
 #!/bin/bash
 
-###### ZPool & SMART status report with FreeNAS config backup
-### Original script by joeschmuck, modified by Bidelu0hm, then by melp (me)
+###### ZPool & SMART status report with TrueNAS config backup
+### Original script by joeschmuck, modified by Bidelu0hm, melp, then by suppaduppax (me)
 
 ### At a minimum, enter email address in user-definable parameter section. Feel free to edit other user parameters as needed.
-### If you find any errors, feel free to contact me on the FreeNAS forums (username melp) or email me at jason at jro dot io.
+### If you find any errors, feel free to contact me on the TrueNAS forums (username melp) or email me at jason at jro dot io.
 
-### Version: v1.5
+### Version: v1.6
 ### Changelog:
-# v1.5
+# v1.6 (suppaduppax):
+#   - Changed Allocated value from  being taken frol zpool to zfs for a more accurate
+#        reading. (zpool list includes parity showing more capacity than whats available)
+#   - Removed Size as it was not an accurate reading (see above)
+#   - Fixed date formatting bug.
+#   - Changed all references of FreeNAS to TrueNAS
+#   - Added a settings.conf.default file. Copy and change values with a local settings.conf
+# v1.5:
 #   - Added Frag%, Size, Allocated, Free for ZPool status report summary.
 #   - Added Disk Size, RPM, Model to the Smart Report
 #   - Added if statment so that if "Model Family" is not present script will use "Device Model" 
@@ -17,7 +24,7 @@
 #   - Removed Power-On time labels and added ":" as a separator.
 #   - Added Power-On format to the Power-On time Header.
 #   - Changed Backup deafult to false.
-# v1.4
+# v1.4:
 #   - in statusOutput changed grep to scrub: instead of scrub
 #   - added elif for resilvered/resilver in progress and scrub in progress with (hopefully) som useful info fields
 #   - changed the email subject to include hostname and date & time
@@ -54,7 +61,12 @@
 
 ###### User-definable Parameters
 ### Email Address
-email="email@address.com"
+if [ ! -f "email-address" ]; then
+	echo "File not found: email-address"
+	exit 1
+fi
+
+email="$(cat email-address)"
 
 ### Global table colors
 okColor="#c9ffcc"       # Hex code for color to use in SMART Status column if drives pass (default is light green, #c9ffcc)
@@ -67,17 +79,17 @@ usedWarn=90             # Pool used percentage for CRITICAL color to be used
 scrubAgeWarn=30         # Maximum age (in days) of last pool scrub before CRITICAL color will be used
 
 ### SMART status summary table settings
-includeSSD="false"      # [NOTE: Currently this is pretty much useless] Change to "true" to include SSDs in SMART status summary table; "false" to disable
+includeSSD="true"      # [NOTE: Currently this is pretty much useless] Change to "true" to include SSDs in SMART status summary table; "false" to disable
 tempWarn=40             # Drive temp (in C) at which WARNING color will be used
 tempCrit=45             # Drive temp (in C) at which CRITICAL color will be used
 sectorsCrit=10          # Number of sectors per drive with errors before CRITICAL color will be used
 testAgeWarn=5           # Maximum age (in days) of last SMART test before CRITICAL color will be used
 powerTimeFormat="ymdh"  # Format for power-on hours string, valid options are "ymdh", "ymd", "ym", or "y" (year month day hour)
 
-### FreeNAS config backup settings
-configBackup="false"     # Change to "false" to skip config backup (which renders next two options meaningless); "true" to keep config backups enabled
-saveBackup="true"       # Change to "false" to delete FreeNAS config backup after mail is sent; "true" to keep it in dir below
-backupLocation="/path/to/config/backup"   # Directory in which to save FreeNAS config backups
+### TrueNAS config backup settings
+configBackup="true"     # Change to "false" to skip config backup (which renders next two options meaningless); "true" to keep config backups enabled
+saveBackup="true"       # Change to "false" to delete TrueNAS config backup after mail is sent; "true" to keep it in dir below
+backupLocation="/mnt/thebank/system/config-backups"   # Directory in which to save TrueNAS config backups
 
 
 ###### Auto-generated Parameters
@@ -116,14 +128,14 @@ pools=$(zpool list -H -o name)
 if [ "$configBackup" == "true" ]; then
     # Set up file names, etc for later
     tarfile="/tmp/config_backup.tar.gz"
-    filename="$(date "+FreeNAS_Config_%Y-%m-%d")"
+    filename="$(date "+TrueNAS_Config_%Y-%m-%d")"
     ### Test config integrity
     if ! [ "$(sqlite3 /data/freenas-v1.db "pragma integrity_check;")" == "ok" ]; then
         # Config integrity check failed, set MIME content type to html and print warning
         (
             echo "--${boundary}"
             echo "Content-Type: text/html"
-            echo "<b>Automatic backup of FreeNAS configuration has failed! The configuration file is corrupted!</b>"
+            echo "<b>Automatic backup of TrueNAS configuration has failed! The configuration file is corrupted!</b>"
             echo "<b>You should correct this problem as soon as possible!</b>"
             echo "<br>"
         ) >> "$logfile"
@@ -175,7 +187,6 @@ fi
     echo "<tr>"
     echo "  <th style=\"text-align:center; width:130px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Pool<br>Name</th>"
     echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Status</th>"
-    echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Size</th>"
     echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Allocated</th>"
     echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Free</th>"
     echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Frag %</th>"
@@ -196,11 +207,9 @@ for pool in $pools; do
     # zpool fragment summary
     frag="$(zpool list -H -p -o frag "$pool" | tr -d %% | awk '{print $0 + 0}')"
 
-    size="$(zpool list -H -o size "$pool")"
-
-    allocated="$(zpool list -H -o allocated "$pool")"
-
-    free="$(zpool list -H -o free "$pool")"
+    # zfs root dataset used and available summary
+    free="$(zfs list "$pool" | grep "$pool" | awk '{printf $3}')"
+    allocated="$(zfs list "$pool" | grep "$pool" | awk '{printf $2}')"
 
     # Total all read, write, and checksum errors per pool
     errors="$(zpool status "$pool" | grep -E "(ONLINE|DEGRADED|FAULTED|UNAVAIL|REMOVED)[ \\t]+[0-9]+")"
@@ -247,8 +256,8 @@ for pool in $pools; do
         scrubRepBytes="$(echo "$statusOutput" | grep "scan:" | awk '{print $4}')"
         scrubErrors="$(echo "$statusOutput" | grep "scan:" | awk '{print $10}')"
         # Convert time/datestamp format presented by zpool status, compare to current date, calculate scrub age
-        scrubDate="$(echo "$statusOutput" | grep "scan:" | awk '{print $17"-"$14"-"$15"_"$16}')"
-        scrubTS="$(date -j -f "%Y-%b-%e_%H:%M:%S" "$scrubDate" "+%s")"
+	scrubDate="$(echo "$statusOutput" | grep "scan:" | awk '{print $11" "$12" "$13" "$14" "$15}')"
+        scrubTS="$(date -j -f "%a %b %d %T %Y" "$scrubDate" "+%s")"
         currentTS="$(date "+%s")"
         scrubAge=$((((currentTS - scrubTS) + 43200) / 86400))
         scrubTime="$(echo "$statusOutput" | grep "scan:" | awk '{print $8}')"
@@ -259,8 +268,8 @@ for pool in $pools; do
             scrubRepBytes="$(echo "$statusOutput" | grep "scan:" | awk '{print $3}')"
             scrubErrors="$(echo "$statusOutput" | grep "scan:" | awk '{print $9}')"
             # Convert time/datestamp format presented by zpool status, compare to current date, calculate scrub age
-            scrubDate="$(echo "$statusOutput" | grep "scan:" | awk '{print $16"-"$13"-"$14"_"$15}')"
-            scrubTS="$(date -j -f "%Y-%b-%e_%H:%M:%S" "$scrubDate" "+%s")"
+            scrubDate="$(echo "$statusOutput" | grep "scan:" | awk '{print $10" "$11" "$12" "$13" "$14}')"
+            scrubTS="$(date -j -f "%a %b %d %T %Y" "$scrubDate" "+%s")"
             currentTS="$(date "+%s")"
             scrubAge=$((((currentTS - scrubTS) + 43200) / 86400))
             scrubTime="$(echo "$statusOutput" | grep "scan:" | awk '{print $7}')"
@@ -272,7 +281,7 @@ for pool in $pools; do
         if [ "$(echo "$statusOutput" | grep "resilvered," | awk '{print $5}')" = "0" ]; then
             scrubTime="$(echo "$statusOutput" | grep "resilvered," | awk '{print $7"<br>to go"}')"
         else
-            scrubTime="$(echo "$statusOutput" | grep "resilvered," | awk '{print $5" "$6" "$7"<br>to go"}')"
+            scrubTime="$(echo "$statusOutput" | grep "resilvered," | awk '{print $5"<br>to go"}')"
         fi
 
     # Check if scrub is in progress
@@ -283,7 +292,7 @@ for pool in $pools; do
         if [ "$(echo "$statusOutput" | grep "repaired," | awk '{print $5}')" = "0" ]; then
             scrubTime="$(echo "$statusOutput" | grep "repaired," | awk '{print $7"<br>to go"}')"
         else
-            scrubTime="$(echo "$statusOutput" | grep "repaired," | awk '{print $5" "$6" "$7"<br>to go"}')"
+            scrubTime="$(echo "$statusOutput" | grep "repaired," | awk '{print $5"<br>to go"}')"
         fi
     fi
 
@@ -307,7 +316,6 @@ for pool in $pools; do
             <td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>
             <td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>
             <td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>
-            <td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>
             <td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s%%</td>
             <td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s%%</td>
             <td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>
@@ -317,7 +325,7 @@ for pool in $pools; do
             <td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>
             <td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>
             <td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>
-        </tr>\\n" "$bgColor" "$pool" "$statusColor" "$status" "$size" "$allocated" "$free" "$frag" "$usedColor" "$used" "$readErrorsColor" "$readErrors" "$writeErrorsColor" "$writeErrors" "$cksumErrorsColor" \
+        </tr>\\n" "$bgColor" "$pool" "$statusColor" "$status" "$allocated" "$free" "$frag" "$usedColor" "$used" "$readErrorsColor" "$readErrors" "$writeErrorsColor" "$writeErrors" "$cksumErrorsColor" \
         "$cksumErrors" "$scrubRepBytesColor" "$scrubRepBytes" "$scrubErrorsColor" "$scrubErrors" "$scrubAgeColor" "$scrubAge" "$scrubTime"
     ) >> "$logfile"
 done
@@ -486,3 +494,9 @@ sed -i '' -e '/SMART Error Log Version/d' "$logfile"
 ### Send report
 sendmail -t -oi < "$logfile"
 rm "$logfile"
+# zpool status output dates as: Sat Apr 10 19:03:04 EDT 2021
+# we need to convert it to something `date` can understand (yymmddHHMM.SS)
+
+# zpool status output dates as: Sat Apr 10 19:03:04 EDT 2021
+# we need to convert it to something `date` can understand (yymmddHHMM.SS)
+
