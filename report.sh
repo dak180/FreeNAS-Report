@@ -60,19 +60,29 @@
 # - Add support for conveyance test
 
 ###### Read User-definable Parameters from settings.conf or settings.conf.defaults
-settingsFile="settings.conf"
-settingsFileDefault="settings.conf.defaults"
+scriptDir="$(dirname "${BASH_SOURCE[0]}")"
+settingsFile="${scriptDir}/settings.conf"
+settingsFileDefault="${scriptDir}/settings.conf.defaults"
 
-# use default settings if settings.conf does not exist
-if [ ! -f "$settingsFile" ]; then
-    if [ ! -f "$settingsFileDefault" ]; then
-        # settings.conf.defaults doesn't exist either so throw an error
-        echo "Settings file not found. 'setings.conf' or 'settings.conf.defaults' must exist in the working directory."
-    fi
-    settingsFile="$settingsFileDefault"
+# read default settings
+if [ ! -f "$settingsFileDefault" ]; then
+    # settings.conf.defaults doesn't exist so throw an error
+    echo "Default settings file not found. 'settings.conf.defaults' must exist in the working directory." >&2
+    exit 1
 fi
 
 # read user defined settings file
+while read LINE;
+do
+    if [[ "$LINE" =~ ^# || -z "$LINE" ]]; then
+        # skip empty lines and ignore spaces and anything that comes after a space
+        continue
+    fi
+    LINE="$(echo "$LINE" | awk '{print $1}')"
+    declare "$LINE";
+done < "$settingsFileDefault"
+
+# overwrite default settings if settings.conf exists
 while read LINE;
 do
     if [[ "$LINE" =~ ^# || -z "$LINE" ]]; then
@@ -85,7 +95,6 @@ done < "$settingsFile"
 
 ###### Auto-generated Parameters
 host=$(hostname -s)
-logfile="/tmp/smart_report.tmp"
 subject="[${host}] Status Report and Configuration Backup $(date "+%Y-%m-%d %H:%M")"
 boundary="gc0p4Jq0M2Yt08jU534c0p"
 if [ "$includeSSD" == "true" ]; then
@@ -484,10 +493,9 @@ sed -i '' -e '/SMART Error Log Version/d' "$logfile"
 
 ### Send report
 sendmail -t -oi < "$logfile"
-rm "$logfile"
-# zpool status output dates as: Sat Apr 10 19:03:04 EDT 2021
-# we need to convert it to something `date` can understand (yymmddHHMM.SS)
 
-# zpool status output dates as: Sat Apr 10 19:03:04 EDT 2021
-# we need to convert it to something `date` can understand (yymmddHHMM.SS)
+if [ "$keepLogFile" != "true" ]; then
+    rm "$logfile"
+fi
 
+echo "finished"

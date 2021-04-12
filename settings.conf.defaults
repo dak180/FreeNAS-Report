@@ -20,14 +20,18 @@ usedWarn=90             # Pool used percentage for CRITICAL color to be used
 scrubAgeWarn=30         # Maximum age (in days) of last pool scrub before CRITICAL color will be used
 
 ### SMART status summary table settings
-includeSSD=false        # [NOTE: Currently this is pretty much useless] Change to "true" to include SSDs in SMART status summary table; "false" to disable
+includeSSD=false        # [NOTE: Currently this is pretty much useless] Change to true to include SSDs in SMART status summary table; false to disable
 tempWarn=40             # Drive temp (in C) at which WARNING color will be used
 tempCrit=45             # Drive temp (in C) at which CRITICAL color will be used
 sectorsCrit=10          # Number of sectors per drive with errors before CRITICAL color will be used
 testAgeWarn=5           # Maximum age (in days) of last SMART test before CRITICAL color will be used
-powerTimeFormat=ymdh    # Format for power-on hours string, valid options are "ymdh", "ymd", "ym", or "y" (year month day hour)
+powerTimeFormat=ymdh    # Format for power-on hours string, valid options are ymdh, ymd, ym, or y (year month day hour)
 
 ### TrueNAS config backup settings
-configBackup=false      # Change to "false" to skip config backup (which renders next two options meaningless); "true" to keep config backups enabled
-saveBackup=true         # Change to "false" to delete TrueNAS config backup after mail is sent; "true" to keep it in dir below
+configBackup=false      # Change to false to skip config backup (which renders next two options meaningless); true to keep config backups enabled
+saveBackup=true         # Change to false to delete TrueNAS config backup after mail is sent; true to keep it in dir below
 backupLocation=/path/to/config/backup   # Directory in which to save TrueNAS config backups
+
+### Log File
+keepLogFile=false               # Change to true to prevent the deletion of the file at the end of the script. Useful for debugging
+logfile=/tmp/smart_report.tmp   # Set the location for the temporary log file 
