@@ -1,13 +1,17 @@
 #!/bin/bash
 
-###### ZPool & SMART status report with FreeNAS config backup
-### Original script by joeschmuck, modified by Bidelu0hm, then by melp (me)
+###### ZPool & SMART status report with TrueNAS config backup
+### Original script by joeschmuck, modified by Bidelu0hm, then by melp
+### Modified by rotx
 
 ### At a minimum, enter email address in user-definable parameter section. Feel free to edit other user parameters as needed.
-### If you find any errors, feel free to contact me on the FreeNAS forums (username melp) or email me at jason at jro dot io.
 
-### Version: v1.6.1
+### Version: v1.7
 ### Changelog:
+# v1.7
+#   - Fixes for SCALE
+#   - Parse short scrub times
+#   - Don't show CRC errors or test age for drives without
 # v1.6.1
 #   - Properly extract scrub times > 1 day
 # v1.6
@@ -77,12 +81,12 @@ scrubAgeWarn=30         # Maximum age (in days) of last pool scrub before CRITIC
 ### SMART status summary table settings
 tempWarn=40             # Drive temp (in C) at which WARNING color will be used
 tempCrit=45             # Drive temp (in C) at which CRITICAL color will be used
-includeSSD="true"      # [NOTE: Currently this is pretty much useless] Change to "true" to include SSDs in SMART status summary table; "false" to disable
+includeSSD="true"       # [NOTE: Currently this is pretty much useless] Change to "true" to include SSDs in SMART status summary table; "false" to disable
 sectorsCrit=10          # Number of sectors per drive with errors before CRITICAL color will be used
 testAgeWarn=5           # Maximum age (in days) of last SMART test before CRITICAL color will be used
 powerTimeFormat="ymdh"  # Format for power-on hours string, valid options are "ymdh", "ymd", "ym", or "y" (year month day hour)
 
-### FreeNAS config backup settings
+### TrueNAS config backup settings
 configBackup="false"     # Change to "false" to skip config backup (which renders next two options meaningless); "true" to keep config backups enabled
 saveBackup="true"       # Change to "false" to delete FreeNAS config backup after mail is sent; "true" to keep it in dir below
 backupLocation="/path/to/config/backup"   # Directory in which to save FreeNAS config backups
@@ -92,27 +96,30 @@ backupLocation="/path/to/config/backup"   # Directory in which to save FreeNAS c
 host=$(hostname -s)
 date=$(date -R)
 logfile="/tmp/smart_report.tmp"
+scargs="-d sat"
 subject="[${host}] Status Report and Configuration Backup $(date "+%Y-%m-%d %H:%M")"
 boundary="="$(dbus-uuidgen)
 messageid=$(dbus-uuidgen)
 disks=$(lsblk -aldn --output name -I 8 | sort -r | tr \\n ' ')
+## disks=$(lsscsi -g -N | awk '$2 ~ /disk/{ print $0 }' | cut -b 70- | sort -r | tr \\n ' ')
+## disks=$(lshw -class disk -short | grep /dev/ | cut -b 31-40 | sort -r | tr \\n ' ')
 
 if [ "$includeSSD" == "true" ]; then
     drives=$(for drive in $disks; do
-        if [ "$(smartctl -i /dev/"${drive}" | grep "SMART support is: Enabled")" ]; then
+        if [ "$(smartctl -i /dev/"${drive}" $scargs | grep "SMART support is: Enabled")" ]; then
             printf "%s " "${drive}"
         fi
     done | awk '{for (i=NF; i!=0 ; i--) print $i }')
 
     nvmes=$(lsblk -aldn --output name -I 259 | sort -r | tr \\n ' ')
     nvmedrives=$(for drive in $nvmes; do
-        if [ "$(smartctl -a /dev/"${drive}" | grep "SMART overall-health self-assessment test result")" ]; then
+        if [ "$(smartctl -a /dev/"${drive}" $scargs | grep "SMART overall-health self-assessment test result")" ]; then
             printf "%s " "${drive}"
         fi
     done | awk '{for (i=NF; i!=0 ; i--) print $i }')
 else
     drives=$(for drive in $disks; do
-        if [ "$(smartctl -i /dev/"${drive}" | grep "SMART support is: Enabled")" ] && ! [ "$(smartctl -i /dev/"${drive}" | grep "Solid State Device")" ]; then
+        if [ "$(smartctl -i /dev/"${drive}" $scargs | grep "SMART support is: Enabled")" ] && ! [ "$(smartctl -i /dev/"${drive}" $scargs | grep "Solid State Device")" ]; then
             printf "%s " "${drive}"
         fi
     done | awk '{for (i=NF; i!=0 ; i--) print $i }')
@@ -137,7 +144,7 @@ pools=$(zpool list -H -o name)
 if [ "$configBackup" == "true" ]; then
     # Set up file names, etc for later
     tarfile="/tmp/config_backup.tar.gz"
-    filename="$(date "+FreeNAS_Config_%Y-%m-%d")"
+    filename="$(date "+TrueNAS_Config_%Y-%m-%d")"
     ### Test config integrity
     if ! [ "$(sqlite3 /data/freenas-v1.db "pragma integrity_check;")" == "ok" ]; then
         # Config integrity check failed, set MIME content type to html and print warning
@@ -145,15 +152,15 @@ if [ "$configBackup" == "true" ]; then
             echo "--${boundary}"
             echo "Content-Transfer-Encoding: 8bit"
             echo -e "Content-Type: text/html; charset=utf-8\n"
-            echo "<b>Automatic backup of FreeNAS configuration has failed! The configuration file is corrupted!</b>"
+            echo "<b>Automatic backup of TrueNAS configuration has failed! The configuration file is corrupted!</b>"
             echo "<b>You should correct this problem as soon as possible!</b>"
             echo "<br>"
         ) >> "$logfile"
     else
         # Config integrity check passed; copy config db, generate checksums, make .tar.gz archive
         cp /data/freenas-v1.db "/tmp/${filename}.db"
-        md5 "/tmp/${filename}.db" > /tmp/config_backup.md5
-        sha256 "/tmp/${filename}.db" > /tmp/config_backup.sha256
+        openssl md5 "/tmp/${filename}.db" > /tmp/config_backup.md5
+        openssl sha256 "/tmp/${filename}.db" > /tmp/config_backup.sha256
         (
             cd "/tmp/" || exit;
             tar -czf "${tarfile}" "./${filename}.db" ./config_backup.md5 ./config_backup.sha256;
@@ -264,26 +271,26 @@ for pool in $pools; do
 
     statusOutput="$(zpool status "$pool")"
     if [ "$(echo "$statusOutput" | grep "scan" | awk '{print $2}')" = "scrub" ]; then
-        scrubRepBytes="$(echo "$statusOutput" | grep "scan" | awk '{print $4}')"
-        scrubErrors="$(echo "$statusOutput" | grep "scan" | awk '{print $10}')"
+        scrubRepBytes="$(echo "$statusOutput" | grep "scan:" | awk '{print $4}')"
+        scrubErrors="$(echo "$statusOutput" | grep "scan:" | sed -e 's/.* with \(.*\) errors on .*$/\1/')"
         # Convert time/datestamp format presented by zpool status, compare to current date, calculate scrub age
-        scrubDate="$(echo "$statusOutput" | grep "scan" | awk '{print $15"-"$14"-"$17" "$16}')"
+        scrubDate="$(echo "$statusOutput" | grep "scan:" | sed -e 's/.* on \(.*\)$/\1/')"
         scrubTS="$(date -d "$scrubDate" "+%s")"
         currentTS="$(date "+%s")"
         scrubAge=$((((currentTS - scrubTS) + 43200) / 86400))
-        scrubTime="$(echo "$statusOutput" | grep "scan:" | sed -e 's/.* in \(.*\) with .*/\1/')"
+        scrubTime="$(echo "$statusOutput" | grep "scan:" | sed -e 's/.* in \(.*\) with .*$/\1/')"
 
     # if status is resilvered
     elif [ "$(echo "$statusOutput" | grep "scan:" | awk '{print $2}')" = "resilvered" ]; then
         resilver="<BR>Resilvered"
         scrubRepBytes="$(echo "$statusOutput" | grep "scan:" | awk '{print $3}')"
-        scrubErrors="$(echo "$statusOutput" | grep "scan:" | awk '{print $9}')"
+        scrubErrors="$(echo "$statusOutput" | grep "scan:" | sed -e 's/.* with \(.*\) errors on .*$/\1/')"
         # Convert time/datestamp format presented by zpool status, compare to current date, calculate scrub age
-        scrubDate="$(echo "$statusOutput" | grep "scan:" | awk '{print $14"-"$13"-"$16" "$15}')"
+        scrubDate="$(echo "$statusOutput" | grep "scan:" | sed -e 's/.* on \(.*\)$/\1/')"
         scrubTS="$(date -d "$scrubDate" "+%s")"
         currentTS="$(date "+%s")"
         scrubAge=$((((currentTS - scrubTS) + 43200) / 86400))
-        scrubTime="$(echo "$statusOutput" | grep "scan:" | awk '{print $7}')"
+        scrubTime="$(echo "$statusOutput" | grep "scan:" | sed -e 's/.* in \(.*\) with .*$/\1/')"
 
     # Check if resilver is in progress
     elif [ "$(echo "$statusOutput"| grep "scan:" | awk '{print $2}')" = "resilver" ]; then
@@ -300,11 +307,7 @@ for pool in $pools; do
         scrubRepBytes="Scrub In Progress"
         scrubErrors="$(echo "$statusOutput" | grep "repaired," | awk '{print $1" repaired"}')"
         scrubAge="$(echo "$statusOutput" | grep "repaired," | awk '{print $3" done"}')"
-        if [ "$(echo "$statusOutput" | grep "repaired," | awk '{print $5}')" = "0" ]; then
-            scrubTime="$(echo "$statusOutput" | grep "repaired," | awk '{print $7"<br>to go"}')"
-        else
-            scrubTime="$(echo "$statusOutput" | grep "repaired," | awk '{print $5" "$6" "$7"<br>to go"}')"
-        fi
+        scrubTime="$(echo "$statusOutput" | grep "repaired," | awk '/repaired, /,/ to go/{print $5"<br>to go"}')"
     fi
 
     # Set row's background color; alternates between white and $altColor (light gray)
@@ -381,12 +384,12 @@ for drive in $drives; do
         # After parsing the output, compute other values (last test's age, on time in YY-MM-DD-HH).
         # After these computations, determine the row's background color (alternating as above, subbing in other colors from the palate as needed).
         # Finally, print the HTML code for the current row of the table with all the gathered data.
-        smartctl -A -i /dev/"$drive" | \
+        smartctl -A -i /dev/"$drive" $scargs | \
         awk -v device="$drive" -v tempWarn="$tempWarn" -v tempCrit="$tempCrit" -v sectorsCrit="$sectorsCrit" -v testAgeWarn="$testAgeWarn" \
         -v okColor="$okColor" -v warnColor="$warnColor" -v critColor="$critColor" -v altColor="$altColor" -v powerTimeFormat="$powerTimeFormat" \
-        -v lastTestHours="$(smartctl -l selftest /dev/"$drive" | grep "# 1" | cut -b 59-68 | awk '{print $1}')" \
-        -v lastTestType="$(smartctl -l selftest /dev/"$drive" | grep "# 1" | awk '{print $3}')" \
-        -v smartStatus="$(smartctl -H /dev/"$drive" | grep "SMART overall-health" | awk '{print $6}')" ' \
+        -v lastTestHours="$(smartctl -l selftest /dev/"$drive" $scargs | grep "# 1" | cut -b 59-68 | awk '{print $1}')" \
+        -v lastTestType="$(smartctl -l selftest /dev/"$drive" $scargs | grep "# 1" | awk '{print $3}')" \
+        -v smartStatus="$(smartctl -H /dev/"$drive" $scargs | grep "SMART overall-health" | awk '{print $6}')" ' \
         /Device Model:/{$1=$2=""; model=$0} \
         /Serial Number:/{serial=$3} \
         /User Capacity:/{$1=$2=$3=$4=""; gsub(/[ B\[\]]/, ""); capacity=$0} \
@@ -420,7 +423,7 @@ for drive in $drives; do
             if (reAllocEvent == "") reAllocEventColor = bgColor; else if (reAllocEvent != "0") reAllocEventColor = warnColor; else reAllocEventColor = bgColor;
             if ((pending + 0) > sectorsCrit) pendingColor = critColor; else if (pending != 0) pendingColor = warnColor; else pendingColor = bgColor;
             if ((offlineUnc + 0) > sectorsCrit) offlineUncColor = critColor; else if (offlineUnc != 0) offlineUncColor = warnColor; else offlineUncColor = bgColor;
-            if (crcErrors != "0") crcErrorsColor = warnColor; else crcErrorsColor = bgColor;
+            if (crcErrors != "" && crcErrors != "0") crcErrorsColor = warnColor; else crcErrorsColor = bgColor;
             if (seekErrorHealth == "") seekErrorHealthColor = bgColor; else if ((seekErrorHealth + 0) < 100) seekErrorHealthColor = warnColor; else seekErrorHealthColor = bgColor;
             if (testAge > testAgeWarn) testAgeColor = warnColor; else testAgeColor = bgColor;
             printf "<tr style=\"background-color:%s;\">\n" \
@@ -457,10 +460,10 @@ for drive in $nvmedrives; do
         # After parsing the output, compute other values (last test's age, on time in YY-MM-DD-HH).
         # After these computations, determine the row's background color (alternating as above, subbing in other colors from the palate as needed).
         # Finally, print the HTML code for the current row of the table with all the gathered data.
-        smartctl -A -i /dev/"$drive" | \
+        smartctl -A -i /dev/"$drive" $scargs | \
         awk -v device="$drive" -v tempWarn="$tempWarn" -v tempCrit="$tempCrit" \
         -v okColor="$okColor" -v warnColor="$warnColor" -v critColor="$critColor" -v altColor="$altColor" -v powerTimeFormat="$powerTimeFormat" \
-        -v smartStatus="$(smartctl -H /dev/"$drive" | grep "SMART overall-health" | awk '{print $6}')" ' \
+        -v smartStatus="$(smartctl -H /dev/"$drive" $scargs | grep "SMART overall-health" | awk '{print $6}')" ' \
         /^Model Number:/{$1=$2=""; model=$0} \
         /^Serial Number:/{serial=$3} \
         /^Namespace 1 Size\/Capacity:/{$1=$2=$3=$4=""; gsub(/[ B\[\]]/, ""); capacity=$0} \
@@ -481,7 +484,7 @@ for drive in $nvmedrives; do
             if ((substr(device,3) + 0) % 2 == 1) bgColor = "#ffffff"; else bgColor = altColor;
             if (smartStatus != "PASSED") smartStatusColor = critColor; else smartStatusColor = okColor;
             if (temp >= tempCrit) tempColor = critColor; else if (temp >= tempWarn) tempColor = warnColor; else tempColor = bgColor;
-            if (crcErrors != "0") crcErrorsColor = warnColor; else crcErrorsColor = bgColor;
+            if (crcErrors != "" && crcErrors != "0") crcErrorsColor = warnColor; else crcErrorsColor = bgColor;
             printf "<tr style=\"background-color:%s;\">\n" \
                 "<td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
                 "<td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
@@ -529,33 +532,33 @@ done
 ### SMART status for each drive
 for drive in $drives; do
     # Gather brand and serial number of each drive
-    brand="$(smartctl -i /dev/"$drive" | grep "Model Family" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
+    brand="$(smartctl -i /dev/"$drive" $scargs | grep "Model Family" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
     if [ "$brand" == "" ]; then
-        brand="$(smartctl -i /dev/"$drive" | grep "Device Model" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
+        brand="$(smartctl -i /dev/"$drive" $scargs | grep "Device Model" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
     fi
-    serial="$(smartctl -i /dev/"$drive" | grep "Serial Number" | awk '{print $3}')"
+    serial="$(smartctl -i /dev/"$drive" $scargs | grep "Serial Number" | awk '{print $3}')"
     (
         # Create a simple header and drop the output of some basic smartctl commands
         echo "<br>"
         echo "<b>########## SMART status report for ${drive} drive (${brand}: ${serial}) ##########</b>"
-        smartctl -H -A -l error /dev/"$drive"
-        smartctl -l selftest /dev/"$drive" | grep "Extended \\|Num" | cut -c6- | head -2
-        smartctl -l selftest /dev/"$drive" | grep "Short \\|Num" | cut -c6- | head -2 | tail -n -1
+        smartctl -H -A -l error /dev/"$drive" $scargs
+        smartctl -l selftest /dev/"$drive" $scargs | grep "Extended \\|Num" | cut -c6- | head -2
+        smartctl -l selftest /dev/"$drive" $scargs | grep "Short \\|Num" | cut -c6- | head -2 | tail -n -1
         echo "<br><br>"
     ) >> "$logfile"
 done
 for drive in $nvmedrives; do
     # Gather brand and serial number of each drive
-    brand="$(smartctl -i /dev/"$drive" | grep "Model Family" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
+    brand="$(smartctl -i /dev/"$drive" $scargs | grep "Model Family" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
     if [ "$brand" == "" ]; then
-        brand="$(smartctl -i /dev/"$drive" | grep "Model Number" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
+        brand="$(smartctl -i /dev/"$drive" $scargs | grep "Model Number" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
     fi
-    serial="$(smartctl -i /dev/"$drive" | grep "Serial Number" | awk '{print $3}')"
+    serial="$(smartctl -i /dev/"$drive" $scargs | grep "Serial Number" | awk '{print $3}')"
     (
         # Create a simple header and drop the output of some basic smartctl commands
         echo "<br>"
         echo "<b>########## Status report for ${drive} NVMe (${brand}: ${serial}) ##########</b>"
-        smartctl -H -A -l error /dev/"$drive"
+        smartctl -H -A -l error /dev/"$drive" $scargs
         echo "<br><br>"
     ) >> "$logfile"
 done
