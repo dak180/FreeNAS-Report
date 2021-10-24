@@ -113,7 +113,7 @@ if [ "$includeSSD" == "true" ]; then
 
     nvmes=$(lsblk -aldn --output name -I 259 | sort -r | tr \\n ' ')
     nvmedrives=$(for drive in $nvmes; do
-        if [ "$(smartctl -a /dev/"${drive}" $scargs | grep "SMART overall-health self-assessment test result")" ]; then
+        if [ "$(smartctl -a /dev/"${drive}" | grep "SMART overall-health self-assessment test result")" ]; then
             printf "%s " "${drive}"
         fi
     done | awk '{for (i=NF; i!=0 ; i--) print $i }')
@@ -460,10 +460,10 @@ for drive in $nvmedrives; do
         # After parsing the output, compute other values (last test's age, on time in YY-MM-DD-HH).
         # After these computations, determine the row's background color (alternating as above, subbing in other colors from the palate as needed).
         # Finally, print the HTML code for the current row of the table with all the gathered data.
-        smartctl -A -i /dev/"$drive" $scargs | \
+        smartctl -A -i /dev/"$drive" | \
         awk -v device="$drive" -v tempWarn="$tempWarn" -v tempCrit="$tempCrit" \
         -v okColor="$okColor" -v warnColor="$warnColor" -v critColor="$critColor" -v altColor="$altColor" -v powerTimeFormat="$powerTimeFormat" \
-        -v smartStatus="$(smartctl -H /dev/"$drive" $scargs | grep "SMART overall-health" | awk '{print $6}')" ' \
+        -v smartStatus="$(smartctl -H /dev/"$drive" | grep "SMART overall-health" | awk '{print $6}')" ' \
         /^Model Number:/{$1=$2=""; model=$0} \
         /^Serial Number:/{serial=$3} \
         /^Namespace 1 Size\/Capacity:/{$1=$2=$3=$4=""; gsub(/[ B\[\]]/, ""); capacity=$0} \
@@ -549,16 +549,16 @@ for drive in $drives; do
 done
 for drive in $nvmedrives; do
     # Gather brand and serial number of each drive
-    brand="$(smartctl -i /dev/"$drive" $scargs | grep "Model Family" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
+    brand="$(smartctl -i /dev/"$drive" | grep "Model Family" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
     if [ "$brand" == "" ]; then
-        brand="$(smartctl -i /dev/"$drive" $scargs | grep "Model Number" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
+        brand="$(smartctl -i /dev/"$drive" | grep "Model Number" | awk '{$1=$2=""; print $0}' | sed -e 's/^[[:space:]]*//')"
     fi
-    serial="$(smartctl -i /dev/"$drive" $scargs | grep "Serial Number" | awk '{print $3}')"
+    serial="$(smartctl -i /dev/"$drive" | grep "Serial Number" | awk '{print $3}')"
     (
         # Create a simple header and drop the output of some basic smartctl commands
         echo "<br>"
         echo "<b>########## Status report for ${drive} NVMe (${brand}: ${serial}) ##########</b>"
-        smartctl -H -A -l error /dev/"$drive" $scargs
+        smartctl -H -A -l error /dev/"$drive"
         echo "<br><br>"
     ) >> "$logfile"
 done
