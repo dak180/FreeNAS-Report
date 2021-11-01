@@ -6,8 +6,10 @@
 
 ### At a minimum, enter email address in user-definable parameter section. Feel free to edit other user parameters as needed.
 
-### Version: v1.7
+### Version: v1.7.1
 ### Changelog:
+# v1.7.1
+#   - Suppress RPM for solid state devices
 # v1.7
 #   - Fixes for SCALE
 #   - Parse short scrub times
@@ -393,7 +395,7 @@ for drive in $drives; do
         /Device Model:/{$1=$2=""; model=$0} \
         /Serial Number:/{serial=$3} \
         /User Capacity:/{$1=$2=$3=$4=""; gsub(/[ B\[\]]/, ""); capacity=$0} \
-        /Rotation Rate:/{rpm=$3} \
+        /Rotation Rate:/{rotation=$3} \
         $1 ~ /^194/{temp=($10 + 0)} \
         /Power_On_Hours/{onHours=($10 + 0)} \
         /Start_Stop_Count/{startStop=($10 + 0)} \
@@ -426,6 +428,7 @@ for drive in $drives; do
             if (crcErrors != "" && crcErrors != "0") crcErrorsColor = warnColor; else crcErrorsColor = bgColor;
             if (seekErrorHealth == "") seekErrorHealthColor = bgColor; else if ((seekErrorHealth + 0) < 100) seekErrorHealthColor = warnColor; else seekErrorHealthColor = bgColor;
             if (testAge > testAgeWarn) testAgeColor = warnColor; else testAgeColor = bgColor;
+            if (rotation == "Solid") rpm = ""; else rpm = rotation;
             printf "<tr style=\"background-color:%s;\">\n" \
                 "<td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
                 "<td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
