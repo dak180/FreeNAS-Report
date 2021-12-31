@@ -1,4 +1,4 @@
-# ZPool & SMART status report with FreeNAS config backup
+# ZPool & SMART status report with TrueNAS config backup
 Original Script By: joeschmuck
 Modified By: Bidelu0hm, melp, onlinepcwizard, Ninpucho, suppaduppax
 
