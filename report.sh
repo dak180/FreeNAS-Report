@@ -972,6 +972,9 @@ function HDDSummary () {
 		local hddInfoSmrt="$(smartctl -AHijl selftest "/dev/${drive}")"
 		local rotTst="$(echo "${hddInfoSmrt}" | jq -Mre '.rotation_rate | values')"
 		local scsiTst="$(echo "${hddInfoSmrt}" | jq -Mre '.device.type | values')"
+		if [ -z "${rotTst}" ]; then
+			rotTst="N/A"
+		fi
 		if [ ! "${rotTst:="0"}" = "0" ] && [ ! "${scsiTst}" = "scsi" ]; then
 			# For each drive detected, run "smartctl -AHijl selftest" and parse its output.
 			# After parsing the output, compute other values (last test's age, on time in YY-MM-DD-HH).
@@ -1178,10 +1181,13 @@ function SASSummary () {
 		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">SMART<br>Status</th>'
 		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Temp</th>'
 		echo '<th style="text-align:center; width:120px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Power-On<br>Time<br>('"${powerTimeFormat}"')</th>'
+		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Start<br>Stop<br>Cycles</th>'
+		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Load<br>Unload<br>Cycles</th>'
 		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Grown<br>Defect<br>List</th>'
 		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Uncorrected<br>Read<br>Errors</th>'
 		echo '<th style="text-align:center; width:120px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Uncorrected<br>Write<br>Errors</th>'
 		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Uncorrected<br>Verify<br>Errors</th>'
+		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Non-medium<br>Errors</th>'
 		echo '<th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Last Test<br>Age (days)</th>'
 		echo '<th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Last Test<br>Type</th></tr>'
 		echo '</tr>'
@@ -1191,6 +1197,7 @@ function SASSummary () {
 	local altRow="false"
 	for drive in "${drives[@]}"; do
 		local sasInfoSmrt="$(smartctl -AHijl selftest "/dev/${drive}")"
+		local nonJsonSasInfoSmrt="$(smartctl -Al error -l selftest "/dev/${drive}")"
 		local rotTst="$(echo "${sasInfoSmrt}" | jq -Mre '.device.type | values')"
 		if [ "${rotTst}" = "scsi" ]; then
 			# For each drive detected, run "smartctl -AHijl selftest" and parse its output.
@@ -1203,6 +1210,15 @@ function SASSummary () {
 			# Available if any tests have completed #FixMe this info is not currently exported in json for sas drives
 			local lastTestHours="$(echo "${sasInfoSmrt}" | jq -Mre '.ata_smart_self_test_log.standard.table[0].lifetime_hours | values')"
 			local lastTestType="$(echo "${sasInfoSmrt}" | jq -Mre '.ata_smart_self_test_log.standard.table[0].type.string | values')"
+			lastTestHours="$(echo "${nonJsonSasInfoSmrt}" | grep "# 1" | awk '{print $7}')"
+			lastTestType="$(echo "${nonJsonSasInfoSmrt}" | grep "# 1" | awk '{print $3" "$4}')"
+			
+			# Workaround for some drives that do not support self testing but still report a garbage self test log 
+			# Set last test type to 'N/A' and last test hours to null "" in this case
+			if [ "${lastTestType}" == "Default Self" ]; then
+				lastTestType="N/A"
+				lastTestHours=""
+			fi
 
 			# Available for any drive smartd knows about
 			if [ "$(echo "${sasInfoSmrt}" | jq -Mre '.smart_status.passed | values')" = "true" ]; then
@@ -1229,7 +1245,9 @@ function SASSummary () {
 			local uncorrectedReadErrors="$(echo "${sasInfoSmrt}" | jq -Mre '.read.total_uncorrected_errors | values')"
 			local uncorrectedWriteErrors="$(echo "${sasInfoSmrt}" | jq -Mre '.write.total_uncorrected_errors | values')"
 			local uncorrectedVerifyErrors="$(echo "${sasInfoSmrt}" | jq -Mre '.verify.total_uncorrected_errors | values')"
-
+			local nonMediumErrors="$(echo "${nonJsonSasInfoSmrt}" | grep "Non-medium" | awk '{print $4}')"
+			local accumStartStopCycles="$(echo "${nonJsonSasInfoSmrt}" | grep "Accumulated start-stop" | awk '{print $4}')"
+			local accumLoadUnloadCycles="$(echo "${nonJsonSasInfoSmrt}" | grep "Accumulated load-unload" | awk '{print $4}')"
 
 			# Get more useful times from hours
 			local testAge=""
@@ -1346,10 +1364,13 @@ function SASSummary () {
 				echo '<td style="text-align:center; background-color:'"${smartStatusColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${smartStatus}"'</td>'
 				echo '<td style="text-align:center; background-color:'"${tempColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${temp}"'</td>'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${onTime}"'</td>'
+				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${accumStartStopCycles}"'</td>'
+				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${accumLoadUnloadCycles}"'</td>'
 				echo '<td style="text-align:center; background-color:'"${scsiGrownDefectListColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${scsiGrownDefectList}"'</td>'
 				echo '<td style="text-align:center; background-color:'"${uncorrectedReadErrorsColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${uncorrectedReadErrors}"'</td>'
 				echo '<td style="text-align:center; background-color:'"${uncorrectedWriteErrorsColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${uncorrectedWriteErrors}"'</td>'
 				echo '<td style="text-align:center; background-color:'"${uncorrectedVerifyErrorsColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${uncorrectedVerifyErrors}"'</td>'
+				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${nonMediumErrors}"'</td>'
 				echo '<td style="text-align:center; background-color:'"${testAgeColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${testAge:-"N/A"}"'</td>'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${lastTestType:-"N/A"}"'</td>'
 				echo '</tr>'
