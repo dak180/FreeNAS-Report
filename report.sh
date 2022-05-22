@@ -106,6 +106,7 @@ ssdTempCrit="45"          # SSD drive temp (in C) at which CRITICAL color will b
 sectorsCrit="10"          # Number of sectors per drive with errors before CRITICAL color will be used
 testAgeWarn="5"           # Maximum age (in days) of last SMART test before CRITICAL color will be used
 powerTimeFormat="ymdh"  # Format for power-on hours string, valid options are "ymdh", "ymd", "ym", or "y" (year month day hour)
+reportMirrorPartners="false" # Change to "true" to include device ID of mirrored partner in summary tables
 
 ### TrueNAS config backup settings
 configBackup="false"     # Change to "false" to skip config backup (which renders next two options meaningless); "true" to keep config backups enabled
@@ -458,6 +459,10 @@ function NVMeSummary () {
 
 		echo '  <th style="text-align:center; width:130px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Serial<br>Number</th>' # Serial Number
 
+		if [ "${reportMirrorPartners}" = "true" ]; then
+			echo '  <th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Mirror<br>Partner</th>' # Device
+		fi
+
 		echo '  <th style="text-align:center; width:90px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Capacity</th>' # Capacity
 
 		echo '  <th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">SMART<br>Status</th>' # SMART Status
@@ -528,6 +533,41 @@ function NVMeSummary () {
 			local mos="$(bc <<< "(${onHours} % 8760) / 730")"
 			local dys="$(bc <<< "((${onHours} % 8760) % 730) / 24")"
 			local hrs="$(bc <<< "((${onHours} % 8760) % 730) % 24")"
+
+			# Look up device ID of mirror partners, if enabled in config
+			if [ "${reportMirrorPartners}" = "true" ]; then
+				local partnerDevice="N/A"
+				# First, identify the gptid. Assume default partitioning: 1=swap, 2=data
+				local gptid="$(glabel status | grep " ${drive}p2" | tr -s " " | cut -d ' ' -sf '1')"
+				if [ -z "${gptid}" ]; then # If there was no partition 2, data must be on partition 1
+					gptid="$(glabel status | grep " ${drive}p1" | tr -s " " | cut -d ' ' -sf '1')"
+				fi
+				# Test whether this gptid is part of a mirrored vdev in a non-boot pool
+				local mirrorTest="$(zpool status -v | grep -A 2 "mirror" | grep -v "mirror" | grep "${gptid}")"
+				if [ ! -z "${mirrorTest}" ]; then
+					local partnerGptid="$(zpool status | grep -C1 "${gptid}" | grep "gptid" | grep -v "${gptid}" | tr -s " " | cut -d ' ' -sf '2')"
+					# Convert the partner gptid to a partition id
+					local partnerPartition="$(glabel status | grep "${partnerGptid}" | tr -s " " | cut -d ' ' -sf '3')"
+					# Strip the partition id to get the partner device name
+					if [ ! -z "${partnerPartition}" ]; then
+						partnerDevice="/dev/${partnerPartition%??}"
+					else # Partner partition was not found, must be offline
+						partnerDevice="Offline"
+					fi
+				else
+					# Test whether this device is part of a mirrored vdev in the freenas-boot pool
+					local bootPartitionTest="$(zpool status | grep -A 3 "freenas-boot" | grep "${drive}")"
+					if [ ! -z "${bootPartitionTest}" ]; then
+						# Grab the partner partition id and transform it to a device name
+						partnerPartition="$(zpool status | grep -A 3 "freenas-boot" | grep -A 2 "mirror" | grep -v "mirror" | grep -v "${drive}" | tr -s " " | cut -d ' ' -sf '2')"
+						if [ ! -z "${partnerPartition}" ]; then
+							partnerDevice="/dev/${partnerPartition%??}"
+						fi
+					else # Partner partition was not found, must be offline
+						partnerDevice="Offline"
+					fi
+				fi
+			fi
 
 			# Set Power-On Time format
 			if [ "${powerTimeFormat}" = "ymdh" ]; then
@@ -639,6 +679,14 @@ function NVMeSummary () {
 				local testAgeColor="${bgColor}"
 			fi
 
+			# Colorize mirrored partner status
+			if [ "${reportMirrorPartners}" = "true" ]; then
+				if [ "${partnerDevice}" = "Offline" ]; then
+					local partnerDeviceColor="${critColor}"
+				else
+					local partnerDeviceColor="${bgColor}"
+				fi
+			fi
 
 			{
 				# Output the row
@@ -646,6 +694,9 @@ function NVMeSummary () {
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"/dev/${drive}"'</td> <!-- device -->'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${model}"'</td> <!-- model -->'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${serial}"'</td> <!-- serial -->'
+				if [ "${reportMirrorPartners}" = "true" ]; then
+					echo '<td style="text-align:center; background-color:'"${partnerDeviceColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"/dev/${drive}"'</td> <!-- partnerDeviceColor, partnerDevice -->'
+				fi
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${capacity}"'</td> <!-- capacity -->'
 				echo '<td style="text-align:center; background-color:'"${smartStatusColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${smartStatus}"'</td> <!-- smartStatusColor, smartStatus -->'
 				echo '<td style="text-align:center; background-color:'"${tempColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${temp}"'</td> <!-- tempColor, temp -->'
@@ -682,6 +733,9 @@ function SSDSummary () {
         echo '<th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Device</th>'
         echo '<th style="text-align:center; width:130px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Model</th>'
         echo '<th style="text-align:center; width:130px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Serial<br>Number</th>'
+		if [ "${reportMirrorPartners}" = "true" ]; then
+			echo '<th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Mirror<br>Partner</th>'
+		fi
         echo '<th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Capacity</th>'
         echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">SMART<br>Status</th>'
         echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Temp</th>'
@@ -779,6 +833,41 @@ function SSDSummary () {
 			local mos="$(bc <<< "(${onHours} % 8760) / 730")"
 			local dys="$(bc <<< "((${onHours} % 8760) % 730) / 24")"
 			local hrs="$(bc <<< "((${onHours} % 8760) % 730) % 24")"
+
+			# Look up device ID of mirror partners, if enabled in config
+			if [ "${reportMirrorPartners}" = "true" ]; then
+				local partnerDevice="N/A"
+				# First, identify the gptid. Assume default partitioning: 1=swap, 2=data
+				local gptid="$(glabel status | grep " ${drive}p2" | tr -s " " | cut -d ' ' -sf '1')"
+				if [ -z "${gptid}" ]; then # If there was no partition 2, data must be on partition 1
+					gptid="$(glabel status | grep " ${drive}p1" | tr -s " " | cut -d ' ' -sf '1')"
+				fi
+				# Test whether this gptid is part of a mirrored vdev in a non-boot pool
+				local mirrorTest="$(zpool status -v | grep -A 2 "mirror" | grep -v "mirror" | grep "${gptid}")"
+				if [ ! -z "${mirrorTest}" ]; then
+					local partnerGptid="$(zpool status | grep -C1 "${gptid}" | grep "gptid" | grep -v "${gptid}" | tr -s " " | cut -d ' ' -sf '2')"
+					# Convert the partner gptid to a partition id
+					local partnerPartition="$(glabel status | grep "${partnerGptid}" | tr -s " " | cut -d ' ' -sf '3')"
+					# Strip the partition id to get the partner device name
+					if [ ! -z "${partnerPartition}" ]; then
+						partnerDevice="/dev/${partnerPartition%??}"
+					else # Partner partition was not found, must be offline
+						partnerDevice="Offline"
+					fi
+				else
+					# Test whether this device is part of a mirrored vdev in the freenas-boot pool
+					local bootPartitionTest="$(zpool status | grep -A 3 "freenas-boot" | grep "${drive}")"
+					if [ ! -z "${bootPartitionTest}" ]; then
+						# Grab the partner partition id and transform it to a device name
+						partnerPartition="$(zpool status | grep -A 3 "freenas-boot" | grep -A 2 "mirror" | grep -v "mirror" | grep -v "${drive}" | tr -s " " | cut -d ' ' -sf '2')"
+						if [ ! -z "${partnerPartition}" ]; then
+							partnerDevice="/dev/${partnerPartition%??}"
+						fi
+					else # Partner partition was not found, must be offline
+						partnerDevice="Offline"
+					fi
+				fi
+			fi
 
 			# Set Power-On Time format
 			if [ "${powerTimeFormat}" = "ymdh" ]; then
@@ -917,6 +1006,14 @@ function SSDSummary () {
 				local testAgeColor="${bgColor}"
 			fi
 
+			# Colorize mirrored partner status
+			if [ "${reportMirrorPartners}" = "true" ]; then
+				if [ "${partnerDevice}" = "Offline" ]; then
+					local partnerDeviceColor="${critColor}"
+				else
+					local partnerDeviceColor="${bgColor}"
+				fi
+			fi
 
             {
 				# Row Output
@@ -924,6 +1021,9 @@ function SSDSummary () {
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"/dev/${device}"'</td>'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${model}"'</td>'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${serial}"'</td>'
+				if [ "${reportMirrorPartners}" = "true" ]; then
+					echo '<td style="text-align:center; background-color:'"${partnerDeviceColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${partnerDevice}"'</td>'
+				fi
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${capacity}"'</td>'
 				echo '<td style="text-align:center; background-color:'"${smartStatusColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${smartStatus}"'</td>'
 				echo '<td style="text-align:center; background-color:'"${tempColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${temp}"'</td>'
@@ -962,6 +1062,9 @@ function HDDSummary () {
 		echo '<th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Device</th>'
 		echo '<th style="text-align:center; width:130px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Model</th>'
 		echo '<th style="text-align:center; width:130px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Serial<br>Number</th>'
+		if [ "${reportMirrorPartners}" = "true" ]; then
+			echo '<th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Mirror<br>Partner</th>'
+		fi
 		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">RPM</th>'
 		echo '<th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Capacity</th>'
 		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">SMART<br>Status</th>'
@@ -1045,6 +1148,41 @@ function HDDSummary () {
 			local mos="$(bc <<< "(${onHours} % 8760) / 730")"
 			local dys="$(bc <<< "((${onHours} % 8760) % 730) / 24")"
 			local hrs="$(bc <<< "((${onHours} % 8760) % 730) % 24")"
+
+			# Look up device ID of mirror partners, if enabled in config
+			if [ "${reportMirrorPartners}" = "true" ]; then
+				local partnerDevice="N/A"
+				# First, identify the gptid. Assume default partitioning: 1=swap, 2=data
+				local gptid="$(glabel status | grep " ${drive}p2" | tr -s " " | cut -d ' ' -sf '1')"
+				if [ -z "${gptid}" ]; then # If there was no partition 2, data must be on partition 1
+					gptid="$(glabel status | grep " ${drive}p1" | tr -s " " | cut -d ' ' -sf '1')"
+				fi
+				# Test whether this gptid is part of a mirrored vdev in a non-boot pool
+				local mirrorTest="$(zpool status -v | grep -A 2 "mirror" | grep -v "mirror" | grep "${gptid}")"
+				if [ ! -z "${mirrorTest}" ]; then
+					local partnerGptid="$(zpool status | grep -C1 "${gptid}" | grep "gptid" | grep -v "${gptid}" | tr -s " " | cut -d ' ' -sf '2')"
+					# Convert the partner gptid to a partition id
+					local partnerPartition="$(glabel status | grep "${partnerGptid}" | tr -s " " | cut -d ' ' -sf '3')"
+					# Strip the partition id to get the partner device name
+					if [ ! -z "${partnerPartition}" ]; then
+						partnerDevice="/dev/${partnerPartition%??}"
+					else # Partner partition was not found, must be offline
+						partnerDevice="Offline"
+					fi
+				else
+					# Test whether this device is part of a mirrored vdev in the freenas-boot pool
+					local bootPartitionTest="$(zpool status | grep -A 3 "freenas-boot" | grep "${drive}")"
+					if [ ! -z "${bootPartitionTest}" ]; then
+						# Grab the partner partition id and transform it to a device name
+						partnerPartition="$(zpool status | grep -A 3 "freenas-boot" | grep -A 2 "mirror" | grep -v "mirror" | grep -v "${drive}" | tr -s " " | cut -d ' ' -sf '2')"
+						if [ ! -z "${partnerPartition}" ]; then
+							partnerDevice="/dev/${partnerPartition%??}"
+						fi
+					else # Partner partition was not found, must be offline
+						partnerDevice="Offline"
+					fi
+				fi
+			fi
 
 			# Set Power-On Time format
 			if [ "${powerTimeFormat}" = "ymdh" ]; then
@@ -1158,6 +1296,14 @@ function HDDSummary () {
 				local testAgeColor="${bgColor}"
 			fi
 
+			# Colorize mirrored partner status
+			if [ "${reportMirrorPartners}" = "true" ]; then
+				if [ "${partnerDevice}" = "Offline" ]; then
+					local partnerDeviceColor="${critColor}"
+				else
+					local partnerDeviceColor="${bgColor}"
+				fi
+			fi
 
 			{
 				# Row Output
@@ -1165,6 +1311,9 @@ function HDDSummary () {
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"/dev/${device}"'</td>'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${model}"'</td>'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${serial}"'</td>'
+				if [ "${reportMirrorPartners}" = "true" ]; then
+					echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${partnerDevice}"'</td>'
+				fi
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${rpm}"'</td>'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${capacity}"'</td>'
 				echo '<td style="text-align:center; background-color:'"${smartStatusColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${smartStatus}"'</td>'
@@ -1204,6 +1353,9 @@ function SASSummary () {
 		echo '<th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Device</th>'
 		echo '<th style="text-align:center; width:130px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Model</th>'
 		echo '<th style="text-align:center; width:130px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Serial<br>Number</th>'
+		if [ "${reportMirrorPartners}" = "true" ]; then
+			echo '<th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Mirror<br>Partner</th>'
+		fi
 		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">RPM</th>'
 		echo '<th style="text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">Capacity</th>'
 		echo '<th style="text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;">SMART<br>Status</th>'
@@ -1314,6 +1466,41 @@ function SASSummary () {
 			local dys="$(bc <<< "((${onHours} % 8760) % 730) / 24")"
 			local hrs="$(bc <<< "((${onHours} % 8760) % 730) % 24")"
 
+			# Look up device ID of mirror partners, if enabled in config
+			if [ "${reportMirrorPartners}" = "true" ]; then
+				local partnerDevice="N/A"
+				# First, identify the gptid. Assume default partitioning: 1=swap, 2=data
+				local gptid="$(glabel status | grep " ${drive}p2" | tr -s " " | cut -d ' ' -sf '1')"
+				if [ -z "${gptid}" ]; then # If there was no partition 2, data must be on partition 1
+					gptid="$(glabel status | grep " ${drive}p1" | tr -s " " | cut -d ' ' -sf '1')"
+				fi
+				# Test whether this gptid is part of a mirrored vdev in a non-boot pool
+				local mirrorTest="$(zpool status -v | grep -A 2 "mirror" | grep -v "mirror" | grep "${gptid}")"
+				if [ ! -z "${mirrorTest}" ]; then
+					local partnerGptid="$(zpool status | grep -C1 "${gptid}" | grep "gptid" | grep -v "${gptid}" | tr -s " " | cut -d ' ' -sf '2')"
+					# Convert the partner gptid to a partition id
+					local partnerPartition="$(glabel status | grep "${partnerGptid}" | tr -s " " | cut -d ' ' -sf '3')"
+					# Strip the partition id to get the partner device name
+					if [ ! -z "${partnerPartition}" ]; then
+						partnerDevice="/dev/${partnerPartition%??}"
+					else # Partner partition was not found, must be offline
+						partnerDevice="Offline"
+					fi
+				else
+					# Test whether this device is part of a mirrored vdev in the freenas-boot pool
+					local bootPartitionTest="$(zpool status | grep -A 3 "freenas-boot" | grep "${drive}")"
+					if [ ! -z "${bootPartitionTest}" ]; then
+						# Grab the partner partition id and transform it to a device name
+						partnerPartition="$(zpool status | grep -A 3 "freenas-boot" | grep -A 2 "mirror" | grep -v "mirror" | grep -v "${drive}" | tr -s " " | cut -d ' ' -sf '2')"
+						if [ ! -z "${partnerPartition}" ]; then
+							partnerDevice="/dev/${partnerPartition%??}"
+						fi
+					else # Partner partition was not found, must be offline
+						partnerDevice="Offline"
+					fi
+				fi
+			fi
+
 			# Set Power-On Time format
 			if [ "${powerTimeFormat}" = "ymdh" ]; then
 				local onTime="${yrs}y ${mos}m ${dys}d ${hrs}h"
@@ -1413,12 +1600,24 @@ function SASSummary () {
 				local testAgeColor="${bgColor}"
 			fi
 
+			# Colorize mirrored partner status
+			if [ "${reportMirrorPartners}" = "true" ]; then
+				if [ "${partnerDevice}" = "Offline" ]; then
+					local partnerDeviceColor="${critColor}"
+				else
+					local partnerDeviceColor="${bgColor}"
+				fi
+			fi
+
 			{
 				# Row Output
 				echo '<tr style="background-color:'"${bgColor}"';">'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"/dev/${device}"'</td>'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${model}"'</td>'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${serial}"'</td>'
+				if [ "${reportMirrorPartners}" = "true" ]; then
+					echo '<td style="text-align:center; background-color:'"${partnerDeviceColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${partnerDevice}"'</td>'
+				fi
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${rpm}"'</td>'
 				echo '<td style="text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${capacity}"'</td>'
 				echo '<td style="text-align:center; background-color:'"${smartStatusColor}"'; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;">'"${smartStatus}"'</td>'
