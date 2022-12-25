@@ -6,8 +6,13 @@
 
 ### At a minimum, enter email address in user-definable parameter section. Feel free to edit other user parameters as needed.
 
-### Version: v1.7.1
+### Version: v1.8
 ### Changelog:
+# v1.8
+#   - Don't display resilvered scrub bytes in warning color
+#   - Change -l selftest to -l xselftest to get power on hours for all drives
+#   - Remove % sign from Seek Error Health values
+#   - Fix nvme parser (remove commas in input)
 # v1.7.1
 #   - Suppress RPM for solid state devices
 # v1.7
@@ -322,7 +327,7 @@ for pool in $pools; do
     if [ "$writeErrors" != "0" ]; then writeErrorsColor="$warnColor"; else writeErrorsColor="$bgColor"; fi
     if [ "$cksumErrors" != "0" ]; then cksumErrorsColor="$warnColor"; else cksumErrorsColor="$bgColor"; fi
     if [ "$used" -gt "$usedWarn" ]; then usedColor="$warnColor"; else usedColor="$bgColor"; fi
-    if [ "$scrubRepBytes" != "N/A" ] && [ "$scrubRepBytes" != "0" ] && [ "$scrubRepBytes" != "0B" ]; then
+    if [ "$scrubRepBytes" != "N/A" ] && [ "$scrubRepBytes" != "0" ] && [ "$scrubRepBytes" != "0B" ] && [ "$resilver" == "" ]; then
         scrubRepBytesColor="$warnColor"; else scrubRepBytesColor="$bgColor"; fi
     if [ "$scrubErrors" != "N/A" ] && [ "$scrubErrors" != "0" ]; then scrubErrorsColor="$warnColor"; else scrubErrorsColor="$bgColor"; fi
     if [ "$(echo "$scrubAge" | awk '{print int($1)}')" -gt "$scrubAgeWarn" ]; then scrubAgeColor="$warnColor"; else scrubAgeColor="$bgColor"; fi
@@ -372,7 +377,7 @@ echo "</table>" >> "$logfile"
     echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Current<br>Pending<br>Sectors</th>"
     echo "  <th style=\"text-align:center; width:120px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Offline<br>Uncorrectable<br>Sectors</th>"
     echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">CRC<br>Errors</th>"
-    echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Seek<br>Error<br>Health</th>"
+    echo "  <th style=\"text-align:center; width:80px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Seek<br>Error<br>Health %</th>"
     echo "  <th style=\"text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Last Test<br>Age (days)</th>"
     echo "  <th style=\"text-align:center; width:100px; height:60px; border:1px solid black; border-collapse:collapse; font-family:courier;\">Last Test<br>Type</th></tr>"
     echo "</tr>"
@@ -389,8 +394,8 @@ for drive in $drives; do
         smartctl -A -i /dev/"$drive" $scargs | \
         awk -v device="$drive" -v tempWarn="$tempWarn" -v tempCrit="$tempCrit" -v sectorsCrit="$sectorsCrit" -v testAgeWarn="$testAgeWarn" \
         -v okColor="$okColor" -v warnColor="$warnColor" -v critColor="$critColor" -v altColor="$altColor" -v powerTimeFormat="$powerTimeFormat" \
-        -v lastTestHours="$(smartctl -l selftest /dev/"$drive" $scargs | grep "# 1" | cut -b 59-68 | awk '{print $1}')" \
-        -v lastTestType="$(smartctl -l selftest /dev/"$drive" $scargs | grep "# 1" | awk '{print $3}')" \
+        -v lastTestHours="$(smartctl -l xselftest /dev/"$drive" $scargs | grep "# 1" | cut -b 59-68 | awk '{print $1}')" \
+        -v lastTestType="$(smartctl -l xselftest /dev/"$drive" $scargs | grep "# 1" | awk '{print $3}')" \
         -v smartStatus="$(smartctl -H /dev/"$drive" $scargs | grep "SMART overall-health" | awk '{print $6}')" ' \
         /Device Model:/{$1=$2=""; model=$0} \
         /Serial Number:/{serial=$3} \
@@ -445,7 +450,7 @@ for drive in $drives; do
                 "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
                 "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
                 "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
-                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s%%</td>\n" \
+                "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
                 "<td style=\"text-align:center; background-color:%s; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%d</td>\n" \
                 "<td style=\"text-align:center; height:25px; border:1px solid black; border-collapse:collapse; font-family:courier;\">%s</td>\n" \
             "</tr>\n", bgColor, device, model, serial, rpm, capacity, smartStatusColor, smartStatus, tempColor, temp, onTime, startStop, spinRetryColor, spinRetry, reAllocColor, reAlloc, \
@@ -471,9 +476,9 @@ for drive in $nvmedrives; do
         /^Serial Number:/{serial=$3} \
         /^Namespace 1 Size\/Capacity:/{$1=$2=$3=$4=""; gsub(/[ B\[\]]/, ""); capacity=$0} \
         /^Temperature:/{temp=($2 + 0)} \
-        /^Power On Hours:/{onHours=($4 + 0)} \
-        /^Power Cycles:/{startStop=($3 + 0)} \
-        /^Media and Data Integrity Errors:/{crcErrors=$6} \
+        /^Power On Hours:/{gsub(/,/,""); onHours=($4 + 0)} \
+        /^Power Cycles:/{gsub(/,/,""); startStop=($3 + 0)} \
+        /^Media and Data Integrity Errors:/{gsub(/,/,""); crcErrors=$6} \
         END {
             yrs=int(onHours / 8760);
             mos=int((onHours % 8760) / 730);
@@ -545,8 +550,8 @@ for drive in $drives; do
         echo "<br>"
         echo "<b>########## SMART status report for ${drive} drive (${brand}: ${serial}) ##########</b>"
         smartctl -H -A -l error /dev/"$drive" $scargs
-        smartctl -l selftest /dev/"$drive" $scargs | grep "Extended \\|Num" | cut -c6- | head -2
-        smartctl -l selftest /dev/"$drive" $scargs | grep "Short \\|Num" | cut -c6- | head -2 | tail -n -1
+        smartctl -l xselftest /dev/"$drive" $scargs | grep "Extended \\|Num" | cut -c6- | head -2
+        smartctl -l xselftest /dev/"$drive" $scargs | grep "Short \\|Num" | cut -c6- | head -2 | tail -n -1
         echo "<br><br>"
     ) >> "$logfile"
 done
