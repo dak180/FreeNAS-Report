@@ -6,8 +6,10 @@
 
 ### At a minimum, enter email address in user-definable parameter section. Feel free to edit other user parameters as needed.
 
-### Version: v1.8
+### Version: v1.8.1
 ### Changelog:
+# v1.8.1
+#   - Remove unnecessary white space in report
 # v1.8
 #   - Don't display resilvered scrub bytes in warning color
 #   - Change -l selftest to -l xselftest to get power on hours for all drives
@@ -118,7 +120,8 @@ if [ "$includeSSD" == "true" ]; then
         fi
     done | awk '{for (i=NF; i!=0 ; i--) print $i }')
 
-    nvmes=$(lsblk -aldn --output name -I 259 | sort -r | tr \\n ' ')
+    # Strip namespace from nvme
+    nvmes=$(lsblk -aldn --output name -I 259 | awk -F n '/n*$/ { print "n"$2 }' | sort -r | uniq | tr \\n ' ')
     nvmedrives=$(for drive in $nvmes; do
         if [ "$(smartctl -a /dev/"${drive}" | grep "SMART overall-health self-assessment test result")" ]; then
             printf "%s " "${drive}"
@@ -533,7 +536,7 @@ for pool in $pools; do
         # Create a simple header and drop the output of zpool status -v
         echo "<b>########## ZPool status report for ${pool} ##########</b>"
         zpool status -v "$pool"
-        echo "<br><br>"
+        echo "<br>"
     ) >> "$logfile"
 done
 
@@ -547,12 +550,11 @@ for drive in $drives; do
     serial="$(smartctl -i /dev/"$drive" $scargs | grep "Serial Number" | awk '{print $3}')"
     (
         # Create a simple header and drop the output of some basic smartctl commands
-        echo "<br>"
         echo "<b>########## SMART status report for ${drive} drive (${brand}: ${serial}) ##########</b>"
         smartctl -H -A -l error /dev/"$drive" $scargs
         smartctl -l xselftest /dev/"$drive" $scargs | grep "Extended \\|Num" | cut -c6- | head -2
         smartctl -l xselftest /dev/"$drive" $scargs | grep "Short \\|Num" | cut -c6- | head -2 | tail -n -1
-        echo "<br><br>"
+        echo "<br>"
     ) >> "$logfile"
 done
 for drive in $nvmedrives; do
@@ -564,10 +566,9 @@ for drive in $nvmedrives; do
     serial="$(smartctl -i /dev/"$drive" | grep "Serial Number" | awk '{print $3}')"
     (
         # Create a simple header and drop the output of some basic smartctl commands
-        echo "<br>"
         echo "<b>########## Status report for ${drive} NVMe (${brand}: ${serial}) ##########</b>"
         smartctl -H -A -l error /dev/"$drive"
-        echo "<br><br>"
+        echo "<br>"
     ) >> "$logfile"
 done
 # Remove some un-needed junk from the output
