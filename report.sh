@@ -2794,8 +2794,12 @@ fi
 ### Send report
 if [ ! "${systemSubType}" = "pfSense" ]; then
 	if [ "${sendMailGone}" = "1" ]; then
+		(
+		# Ensure the working directory is writable by multireport_sendemail
+		cd "${logfileLocation}"
 		base64 -w 0 < "${logfile}" > "${logfile}.64"
 		multireport_sendemail.py --mail_bulk "${logfile}.64"
+		)
 	else
 		sendmail -t -i < "${logfile}"
 	fi
