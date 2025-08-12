@@ -2462,7 +2462,7 @@ for command in "${commands[@]}"; do
 		exit 100
 	else
 		if [ "${command}" = "multireport_sendemail.py" ] && [ ! -x "$(type -P multireport_sendemail.py)" ]; then
-			chmod +x "$(type -P multireport_sendemail.py)"
+			chmod a+x "$(type -P multireport_sendemail.py)"
 		fi
 	fi
 done
