@@ -839,7 +839,7 @@ EOF
 
 			# Colorize & derive write stats
 			# 512 because apparently the NVMe spec uses magic numbers
-			local totalBW="$(bc <<< "scale=1; (${totalLBA} * 512) / (1000^3)" | sed -e 's:^\.:0.:')"
+			local totalBW="$(printf "%.1f\n" "$(bc -l <<< "(${totalLBA} * 512) / (1000^3)")" | sed -e 's:^\.:0.:')"
 			if (( $(bc -l <<< "${totalBW} > ${totalBWCrit}") )); then
 				local totalBWColor="${critColor}"
 			elif (( $(bc -l <<< "${totalBW} > ${totalBWWarn}") )); then
@@ -855,7 +855,7 @@ EOF
 			# Try to not divide by zero
 			# 512 because apparently the NVMe spec uses magic numbers
 			if [ ! "0" = "$(bc <<< "scale=1; ${onHours} / 24")" ]; then
-				local bwPerDay="$(bc <<< "scale=1; (((${totalLBA} * 512) / (1000^3)) * 1000) / (${onHours} / 24)" | sed -e 's:^\.:0.:')"
+				local bwPerDay="$(printf "%.1f\n" "$(bc -l <<< "(((${totalLBA} * 512) / (1000^3)) * 1000) / (${onHours} / 24)")" | sed -e 's:^\.:0.:')"
 				if [ "${bwPerDay}" = "0.0" ]; then
 					bwPerDay="N/A"
 				else
@@ -1265,7 +1265,7 @@ EOF
 			fi
 
 			# Colorize & derive write stats
-			local totalBW="$(bc <<< "scale=1; (${totalLBA} * ${sectorSize}) / (1000^4)" | sed -e 's:^\.:0.:')"
+			local totalBW="$(printf "%.1f\n" "$(bc -l <<< "(${totalLBA} * ${sectorSize}) / (1000^4)")" | sed -e 's:^\.:0.:')"
 			if (( $(bc -l <<< "${totalBW} > ${totalBWCrit}") )); then
 				local totalBWColor="${critColor}"
 			elif (( $(bc -l <<< "${totalBW} > ${totalBWWarn}") )); then
@@ -1280,7 +1280,7 @@ EOF
 			fi
 			# Try to not divide by zero
 			if [ ! "0" = "$(bc <<< "scale=1; ${onHours} / 24")" ]; then
-				local bwPerDay="$(bc <<< "scale=1; (((${totalLBA} * ${sectorSize}) / (1000^4)) * 1000) / (${onHours} / 24)" | sed -e 's:^\.:0.:')"
+				local bwPerDay="$(printf "%.1f\n" "$(bc -l <<< "(((${totalLBA} * ${sectorSize}) / (1000^4)) * 1000) / (${onHours} / 24)")" | sed -e 's:^\.:0.:')"
 				if [ "${bwPerDay}" = "0.0" ]; then
 					bwPerDay="N/A"
 				else
