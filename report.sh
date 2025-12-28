@@ -93,6 +93,10 @@ defaultFile="1"
 ###### User-definable Parameters
 ### Email Address
 email="email@address.com"
+# To be effective both fromName and fromEmail need to be set
+# Setting these values is not normally required as they will be read from the gui configuration
+fromName=""
+fromEmail=""
 
 ### Global table colors
 okColor="#c9ffcc"	# Hex code for color to use in SMART Status column if drives pass (default is light green, #c9ffcc)
@@ -2488,7 +2492,9 @@ fi
 
 ###### Auto-generated Parameters
 host="$(hostname -s)"
-if [ "${systemSubType}" = "pfSense" ]; then
+if [ ! -z "${fromEmail}" ] && [ ! -z "${fromName}" ]; then
+	true
+elif [ "${systemSubType}" = "pfSense" ]; then
 	fromEmail="$(hostname -s)@$(hostname -d | sed -e 's:local\.::')"
 	fromName="$(hostname -s)"
 else
@@ -2796,6 +2802,7 @@ if [ ! "${systemSubType}" = "pfSense" ]; then
 	if [ "${sendMailGone}" = "1" ]; then
 		(
 		# Ensure the working directory is writable by multireport_sendemail.
+		# shellcheck disable=SC2164
 		cd "${logfileLocation}"
 		base64 -w 0 < "${logfile}" > "${logfile}.64"
 		multireport_sendemail.py --mail_bulk "${logfile}.64"
@@ -2805,7 +2812,7 @@ if [ ! "${systemSubType}" = "pfSense" ]; then
 	fi
 
 	if [ "${saveLogfile}" = "false" ]; then
-		rm "${logfile}" "${logfile}.64"
+		rm -f "${logfile}" "${logfile}.64"
 	fi
 else
 	chmod 666 "${logfile}"
