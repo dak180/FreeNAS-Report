@@ -2410,6 +2410,7 @@ jq
 head
 tail
 sort
+printf
 tee
 sqlite3
 )
